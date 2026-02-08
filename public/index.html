@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MCP Chatbot</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+
+  <body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow"></div>
+
+    <div class="shell">
+      <header class="top">
+        <div class="brand">
+          <div class="logoMark"></div>
+          <div>
+            <div class="title">MCP Chatbot</div>
+            <div class="subtitle">כלים דינמיים דרך Render + MCP</div>
+          </div>
+        </div>
+
+        <div class="topActions">
+          <button id="openAttach" class="btn btn-primary">צרף MCP</button>
+          <button id="refreshTools" class="btn btn-ghost">רענן כלים</button>
+          <div class="chip" id="statusChip">טוען...</div>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="panel">
+          <div class="panelHead">
+            <div class="panelTitle">MCPs מחוברים</div>
+            <div class="panelHint">אחרי צירוף, תראה כאן את השרתים והכלים</div>
+          </div>
+
+          <div id="serversList" class="cards"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panelHead">
+            <div class="panelTitle">צ'אט</div>
+            <div class="panelHint">המודל ישתמש בכלים כשצריך</div>
+          </div>
+
+          <div id="chat" class="chat"></div>
+
+          <form id="form" class="bar">
+            <input id="input" placeholder="כתוב הודעה..." autocomplete="off" />
+            <button id="send" type="submit" class="btn btn-primary">שלח</button>
+          </form>
+        </section>
+      </main>
+    </div>
+
+    <!-- Modal: Attach MCP -->
+    <div id="modal" class="modal hidden" aria-hidden="true">
+      <div class="modalBackdrop" id="closeModal"></div>
+
+      <div class="modalCard">
+        <div class="modalHead">
+          <div>
+            <div class="modalTitle">צרף MCP</div>
+            <div class="modalSub">הדבק URL מרנדר או הוסף MCP מקומי (stdio)</div>
+          </div>
+          <button class="iconBtn" id="xBtn" title="סגור">✕</button>
+        </div>
+
+        <div class="tabs">
+          <button class="tab active" data-tab="httpTab">
+            Render URL (HTTP)
+          </button>
+          <button class="tab" data-tab="stdioTab">Local MCP (stdio)</button>
+        </div>
+
+        <div class="tabBody">
+          <!-- HTTP -->
+          <div id="httpTab" class="tabPane active">
+            <div class="formGrid">
+              <label class="field">
+                <span>ID (למשל: weather)</span>
+                <input id="httpId" placeholder="weather" />
+              </label>
+
+              <label class="field">
+                <span>Label (אופציונלי)</span>
+                <input id="httpLabel" placeholder="Weather Service" />
+              </label>
+
+              <label class="field full">
+                <span>Render URL (אפשר בלי /mcp)</span>
+                <input
+                  id="httpUrl"
+                  placeholder="https://render-uplaude.onrender.com או https://.../mcp"
+                />
+              </label>
+            </div>
+
+            <div class="modalActions">
+              <button id="attachHttp" class="btn btn-primary">צרף MCP</button>
+              <button class="btn btn-ghost" data-close>ביטול</button>
+            </div>
+
+            <div class="note">
+              טיפ: אם הדבקת בלי <code>/mcp</code>, המערכת תוסיף אוטומטית.
+            </div>
+          </div>
+
+          <!-- STDIO -->
+          <div id="stdioTab" class="tabPane">
+            <div class="note warn">
+              ⚠️ stdio עובד רק מקומית. כדי לאפשר: הגדר
+              <code>ALLOW_STDIO=true</code> לפני <code>npm start</code>.
+            </div>
+
+            <div class="formGrid">
+              <label class="field">
+                <span>ID (למשל: localWeather)</span>
+                <input id="stdioId" placeholder="localWeather" />
+              </label>
+
+              <label class="field">
+                <span>Label (אופציונלי)</span>
+                <input id="stdioLabel" placeholder="Local MCP" />
+              </label>
+
+              <label class="field full">
+                <span>Command (למשל: node)</span>
+                <input id="stdioCommand" placeholder="node" />
+              </label>
+
+              <label class="field full">
+                <span>Args (JSON Array) למשל: ["src/index.js"]</span>
+                <input id="stdioArgs" placeholder='["path/to/server.js"]' />
+              </label>
+            </div>
+
+            <div class="modalActions">
+              <button id="attachStdio" class="btn btn-primary">
+                צרף MCP מקומי
+              </button>
+              <button class="btn btn-ghost" data-close>ביטול</button>
+            </div>
+
+            <div class="note">
+              זה מתאים כשאתה מפתח MCP מקומי ורוצה לחבר אותו בלי להעלות לרנדר.
+            </div>
+          </div>
+        </div>
+
+        <div class="modalFooter">
+          <div class="miniStatus" id="modalStatus"></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
