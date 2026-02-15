@@ -1,264 +1,198 @@
 /**
- * UI Logic
- * ========
- * - טוען סטטוס servers/tools מהשרת
- * - פותח מודאל "צרף MCP"
- * - תומך בצירוף HTTP (Render URL) ו-stdio (מקומי)
- * - מציג כרטיסים של MCPs מחוברים + אפשרות הסרה
- * - שולח צ'אט ל-/api/chat
+ * public/app.js
+ * -------------
+ * Frontend:
+ * - multi chat (יצירה/מחיקה/מעבר)
+ * - שמירת הודעות ב-LocalStorage
+ * - חיבור לשרת שמחזיק גם הוא history כדי שה-LLM יתבסס עליו
+ * - ניהול MCPs (הוספה/מחיקה/רשימה)
  */
 
-const chat = document.getElementById("chat");
+const chatEl = document.getElementById("chat");
 const form = document.getElementById("form");
 const input = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 
-const statusChip = document.getElementById("statusChip");
-const refreshBtn = document.getElementById("refreshTools");
+const newChatBtn = document.getElementById("newChatBtn");
+const deleteChatBtn = document.getElementById("deleteChatBtn");
+const chatSelect = document.getElementById("chatSelect");
 
-const serversList = document.getElementById("serversList");
+// MCP
+const mcpList = document.getElementById("mcpList");
+const mcpStats = document.getElementById("mcpStats");
+const openMcpModalBtn = document.getElementById("openMcpModalBtn");
 
 // Modal
-const modal = document.getElementById("modal");
-const openAttach = document.getElementById("openAttach");
-const closeModal = document.getElementById("closeModal");
-const xBtn = document.getElementById("xBtn");
-const modalStatus = document.getElementById("modalStatus");
+const modalOverlay = document.getElementById("modalOverlay");
+const closeModalBtn = document.getElementById("closeModalBtn");
+const cancelBtn1 = document.getElementById("cancelBtn1");
+const cancelBtn2 = document.getElementById("cancelBtn2");
 
 // Tabs
-const tabButtons = Array.from(document.querySelectorAll(".tab"));
-const tabPanes = Array.from(document.querySelectorAll(".tabPane"));
+const tabs = Array.from(document.querySelectorAll(".tab"));
+const panes = Array.from(document.querySelectorAll(".pane"));
 
 // HTTP fields
 const httpId = document.getElementById("httpId");
 const httpLabel = document.getElementById("httpLabel");
 const httpUrl = document.getElementById("httpUrl");
-const attachHttp = document.getElementById("attachHttp");
+const addHttpBtn = document.getElementById("addHttpBtn");
+const httpStatus = document.getElementById("httpStatus");
 
-// STDIO fields
-const stdioId = document.getElementById("stdioId");
-const stdioLabel = document.getElementById("stdioLabel");
-const stdioCommand = document.getElementById("stdioCommand");
-const stdioArgs = document.getElementById("stdioArgs");
-const attachStdio = document.getElementById("attachStdio");
+// Local fields
+const localId = document.getElementById("localId");
+const localLabel = document.getElementById("localLabel");
+const localCmd = document.getElementById("localCmd");
+const localArgs = document.getElementById("localArgs");
+const addLocalBtn = document.getElementById("addLocalBtn");
+const localStatus = document.getElementById("localStatus");
 
-function setChip(text) {
-  statusChip.textContent = text;
+// ===============================
+// Multi-chat (LocalStorage)
+// ===============================
+const STORAGE_KEY = "mcp_chatbot_multi_v2";
+
+let state = loadState();
+
+function makeId() {
+  return `chat_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
-function setModalStatus(text) {
-  modalStatus.textContent = text || "";
+function loadState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw) {
+    try {
+      return JSON.parse(raw);
+    } catch {}
+  }
+  const first = makeId();
+  const init = {
+    activeChatId: first,
+    chats: { [first]: { title: "צ'אט 1", messages: [] } },
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(init));
+  return init;
 }
 
-function openModal() {
-  modal.classList.remove("hidden");
-  modal.setAttribute("aria-hidden", "false");
-  setModalStatus("");
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function hideModal() {
-  modal.classList.add("hidden");
-  modal.setAttribute("aria-hidden", "true");
-  setModalStatus("");
+function getActiveChat() {
+  return state.chats[state.activeChatId];
 }
 
-// close hooks
-openAttach.addEventListener("click", openModal);
-closeModal.addEventListener("click", hideModal);
-xBtn.addEventListener("click", hideModal);
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") hideModal();
-});
-document
-  .querySelectorAll("[data-close]")
-  .forEach((b) => b.addEventListener("click", hideModal));
+function clearChatUI() {
+  chatEl.innerHTML = "";
+}
 
-// tabs
-tabButtons.forEach((btn) => {
-  btn.addEventListener("click", () => {
-    tabButtons.forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    const target = btn.getAttribute("data-tab");
-    tabPanes.forEach((p) => p.classList.remove("active"));
-    document.getElementById(target).classList.add("active");
-    setModalStatus("");
-  });
-});
-
-function addBubble(text, who) {
+function addBubble(text, who = "me") {
   const div = document.createElement("div");
   div.className = `bubble ${who}`;
   div.textContent = text;
-  chat.appendChild(div);
-  chat.scrollTop = chat.scrollHeight;
+  chatEl.appendChild(div);
+  chatEl.scrollTop = chatEl.scrollHeight;
 }
 
-function serverCardHtml(s) {
-  const meta =
-    s.type === "http"
-      ? `URL: ${s.url}`
-      : `CMD: ${s.command} ${Array.isArray(s.args) ? s.args.join(" ") : ""}`;
-
-  return `
-    <div class="card">
-      <div class="cardLeft">
-        <div class="cardTitle">
-          ${escapeHtml(s.label || s.id)}
-          <span class="badge">${escapeHtml(s.type.toUpperCase())}</span>
-          <span class="badge">tools: ${s.toolCount ?? 0}</span>
-        </div>
-        <div class="cardMeta">${escapeHtml(meta)}</div>
-      </div>
-      <div class="cardActions">
-        <button class="btn btn-danger" data-remove="${escapeHtml(s.id)}">הסר</button>
-      </div>
-    </div>
-  `;
-}
-
-function escapeHtml(str) {
-  return String(str || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-async function fetchMcps() {
-  const r = await fetch("/api/mcps");
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error || "Failed to fetch MCPs");
-  return data;
-}
-
-async function refreshTools() {
-  setChip("מרענן כלים...");
-  const r = await fetch("/api/mcps/refresh", { method: "POST" });
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error || "Refresh failed");
-  await renderState(data);
-  setChip(`Servers: ${data.servers.length} | Tools: ${data.tools.length}`);
-}
-
-async function renderState(data) {
-  // servers list
-  if (!data.servers?.length) {
-    serversList.innerHTML = `
-      <div class="card">
-        <div class="cardLeft">
-          <div class="cardTitle">אין MCP מחוברים</div>
-          <div class="cardMeta">לחץ על "צרף MCP" כדי להוסיף Render URL או MCP מקומי (stdio)</div>
-        </div>
-      </div>
-    `;
-  } else {
-    serversList.innerHTML = data.servers.map(serverCardHtml).join("");
+function renderActiveChat() {
+  clearChatUI();
+  const active = getActiveChat();
+  for (const m of active.messages) {
+    addBubble(m.text, m.who);
   }
+}
 
-  // attach remove handlers
-  serversList.querySelectorAll("[data-remove]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const id = btn.getAttribute("data-remove");
-      if (!confirm(`להסיר MCP "${id}"?`)) return;
-      try {
-        setChip("מסיר...");
-        const rr = await fetch(`/api/mcps/${encodeURIComponent(id)}`, {
-          method: "DELETE",
-        });
-        const dd = await rr.json();
-        if (!rr.ok) throw new Error(dd.error || "Remove failed");
-        await renderState(dd);
-        setChip(`Servers: ${dd.servers.length} | Tools: ${dd.tools.length}`);
-      } catch (e) {
-        alert("שגיאה בהסרה: " + e.message);
-        setChip("שגיאה");
-      }
-    });
+function renderChatSelect() {
+  chatSelect.innerHTML = "";
+  const entries = Object.entries(state.chats);
+  entries.forEach(([id, chatObj], idx) => {
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = chatObj.title || `צ'אט ${idx + 1}`;
+    if (id === state.activeChatId) opt.selected = true;
+    chatSelect.appendChild(opt);
   });
 }
 
-// Attach HTTP
-attachHttp.addEventListener("click", async () => {
-  const id = httpId.value.trim();
-  const url = httpUrl.value.trim();
-  const label = httpLabel.value.trim();
-
-  if (!id) return setModalStatus("חסר ID (למשל: weather)");
-  if (!url) return setModalStatus("חסר URL");
-
-  setModalStatus("מחבר MCP (HTTP)...");
-  try {
-    const r = await fetch("/api/mcps/add-http", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, url, label }),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || "Attach failed");
-    await renderState(data);
-    setChip(`Servers: ${data.servers.length} | Tools: ${data.tools.length}`);
-    setModalStatus("הוסף בהצלחה ✅");
-  } catch (e) {
-    setModalStatus("שגיאה: " + e.message);
+function renameChatIfFirstMessage(chatId, firstUserMessage) {
+  const c = state.chats[chatId];
+  if (!c) return;
+  if (c.messages.length === 1 && c.title.startsWith("צ'אט")) {
+    c.title =
+      firstUserMessage.slice(0, 18) + (firstUserMessage.length > 18 ? "…" : "");
   }
+}
+
+// init render
+renderChatSelect();
+renderActiveChat();
+
+// new chat
+newChatBtn.addEventListener("click", () => {
+  const newId = makeId();
+  const count = Object.keys(state.chats).length + 1;
+  state.chats[newId] = { title: `צ'אט ${count}`, messages: [] };
+  state.activeChatId = newId;
+  saveState();
+  renderChatSelect();
+  renderActiveChat();
+  input.focus();
 });
 
-// Attach stdio
-attachStdio.addEventListener("click", async () => {
-  const id = stdioId.value.trim();
-  const command = stdioCommand.value.trim();
-  const label = stdioLabel.value.trim();
-  const argsRaw = stdioArgs.value.trim();
-
-  if (!id) return setModalStatus("חסר ID (למשל: localWeather)");
-  if (!command) return setModalStatus("חסר Command (למשל: node)");
-
-  let args = [];
-  if (argsRaw) {
-    try {
-      args = JSON.parse(argsRaw);
-      if (!Array.isArray(args)) throw new Error("Args must be JSON array");
-    } catch (e) {
-      return setModalStatus(
-        'Args לא תקין. צריך JSON array. לדוגמה: ["src/index.js"]',
-      );
-    }
-  }
-
-  setModalStatus("מחבר MCP (stdio)...");
-  try {
-    const r = await fetch("/api/mcps/add-stdio", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, command, args, label }),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || "Attach failed");
-    await renderState(data);
-    setChip(`Servers: ${data.servers.length} | Tools: ${data.tools.length}`);
-    setModalStatus("הוסף בהצלחה ✅");
-  } catch (e) {
-    setModalStatus("שגיאה: " + e.message);
-  }
+// switch chat
+chatSelect.addEventListener("change", () => {
+  state.activeChatId = chatSelect.value;
+  saveState();
+  renderActiveChat();
+  input.focus();
 });
 
-// Refresh button
-refreshBtn.addEventListener("click", async () => {
+// delete chat
+deleteChatBtn.addEventListener("click", async () => {
+  const activeId = state.activeChatId;
+  if (!activeId) return;
+  if (!confirm("למחוק את הצ'אט הנוכחי?")) return;
+
+  // מוחקים בשרת (ניקוי RAM)
   try {
-    await refreshTools();
-  } catch (e) {
-    alert("שגיאה ברענון: " + e.message);
-    setChip("שגיאה");
+    await fetch(`/api/chat/${activeId}`, { method: "DELETE" });
+  } catch {}
+
+  delete state.chats[activeId];
+  const ids = Object.keys(state.chats);
+
+  if (ids.length === 0) {
+    const newId = makeId();
+    state.chats[newId] = { title: "צ'אט 1", messages: [] };
+    state.activeChatId = newId;
+  } else {
+    state.activeChatId = ids[0];
   }
+
+  saveState();
+  renderChatSelect();
+  renderActiveChat();
+  input.focus();
 });
 
-// Chat submit
+// ===============================
+// Send message -> Server -> OpenAI
+// ===============================
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const msg = input.value.trim();
   if (!msg) return;
 
+  const chatId = state.activeChatId;
+  const activeChat = getActiveChat();
+
+  activeChat.messages.push({ who: "me", text: msg });
+  renameChatIfFirstMessage(chatId, msg);
+
+  saveState();
+  renderChatSelect();
   addBubble(msg, "me");
+
   input.value = "";
   input.focus();
   sendBtn.disabled = true;
@@ -267,25 +201,159 @@ form.addEventListener("submit", async (e) => {
     const r = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: msg }),
+      body: JSON.stringify({ chatId, message: msg }),
     });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || "Chat failed");
-    addBubble(data.reply || "(empty)", "bot");
-  } catch (e) {
-    addBubble("שגיאה: " + e.message, "bot");
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data?.error || "Request failed");
+
+    activeChat.messages.push({ who: "bot", text: data.reply });
+    saveState();
+    addBubble(data.reply, "bot");
+  } catch (err) {
+    const text = "שגיאה: " + err.message;
+    activeChat.messages.push({ who: "bot", text });
+    saveState();
+    addBubble(text, "bot");
   } finally {
     sendBtn.disabled = false;
   }
 });
 
-// init
-(async () => {
-  try {
-    const data = await fetchMcps();
-    await renderState(data);
-    setChip(`Servers: ${data.servers.length} | Tools: ${data.tools.length}`);
-  } catch (e) {
-    setChip("שגיאה בטעינת מצב");
+// ===============================
+// MCP Modal + Registry
+// ===============================
+function openModal() {
+  modalOverlay.classList.remove("hidden");
+  httpStatus.textContent = "";
+  localStatus.textContent = "";
+}
+
+function closeModal() {
+  modalOverlay.classList.add("hidden");
+}
+
+openMcpModalBtn.addEventListener("click", openModal);
+closeModalBtn.addEventListener("click", closeModal);
+cancelBtn1.addEventListener("click", closeModal);
+cancelBtn2.addEventListener("click", closeModal);
+
+modalOverlay.addEventListener("click", (e) => {
+  if (e.target === modalOverlay) closeModal();
+});
+
+// tabs
+tabs.forEach((t) => {
+  t.addEventListener("click", () => {
+    tabs.forEach((x) => x.classList.remove("active"));
+    t.classList.add("active");
+
+    panes.forEach((p) => p.classList.add("hidden"));
+    document
+      .querySelector(`.pane[data-pane="${t.dataset.tab}"]`)
+      .classList.remove("hidden");
+  });
+});
+
+async function refreshMcps() {
+  const r = await fetch("/api/mcps");
+  const data = await r.json();
+  const servers = data.servers || [];
+  mcpStats.textContent = `Servers: ${servers.length}`;
+  renderMcpList(servers);
+}
+
+function renderMcpList(servers) {
+  mcpList.innerHTML = "";
+  if (!servers.length) {
+    mcpList.innerHTML = `<div class="empty">לא נוספו MCPs עדיין. לחץ "צרף MCP".</div>`;
+    return;
   }
-})();
+
+  for (const s of servers) {
+    const div = document.createElement("div");
+    div.className = "mcp-item";
+    div.innerHTML = `
+      <div class="mcp-main">
+        <div class="mcp-title">${escapeHtml(s.label)} <span class="pill">${escapeHtml(s.type)}</span></div>
+        <div class="mcp-sub">${escapeHtml(s.id)}${s.url ? " · " + escapeHtml(s.url) : ""}</div>
+      </div>
+      <button class="danger sm" data-del="${escapeHtml(s.id)}">מחק</button>
+    `;
+    mcpList.appendChild(div);
+  }
+
+  mcpList.querySelectorAll("[data-del]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-del");
+      if (!confirm(`למחוק MCP "${id}"?`)) return;
+      await fetch(`/api/mcps/${encodeURIComponent(id)}`, { method: "DELETE" });
+      await refreshMcps();
+    });
+  });
+}
+
+function escapeHtml(str) {
+  return String(str || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+// add http
+addHttpBtn.addEventListener("click", async () => {
+  try {
+    httpStatus.textContent = "מוסיף...";
+    const body = {
+      id: httpId.value.trim(),
+      label: httpLabel.value.trim(),
+      url: httpUrl.value.trim(),
+    };
+
+    const r = await fetch("/api/mcps/http", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data?.error || "Failed");
+
+    httpStatus.textContent = "✅ נוסף";
+    await refreshMcps();
+  } catch (e) {
+    httpStatus.textContent = "❌ " + e.message;
+  }
+});
+
+// add local
+addLocalBtn.addEventListener("click", async () => {
+  try {
+    localStatus.textContent = "מוסיף...";
+    const body = {
+      id: localId.value.trim(),
+      label: localLabel.value.trim(),
+      command: localCmd.value.trim(),
+      args: localArgs.value
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean),
+    };
+
+    const r = await fetch("/api/mcps/local", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data?.error || "Failed");
+
+    localStatus.textContent = "✅ נוסף";
+    await refreshMcps();
+  } catch (e) {
+    localStatus.textContent = "❌ " + e.message;
+  }
+});
+
+// init
+refreshMcps().catch(() => {});
