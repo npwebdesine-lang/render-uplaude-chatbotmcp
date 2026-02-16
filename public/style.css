@@ -362,3 +362,36 @@ button.sm {
     opacity: 0.3;
   }
 }
+/* ... כל ה-CSS הקודם שלך נשאר זהה ... */
+/* הוסף את החלקים הבאים בסוף הקובץ: */
+
+.tools-used {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tool-badge {
+  background: rgba(0, 0, 0, 0.3);
+  color: #a0c4ff;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-family: monospace;
+  border: 1px solid rgba(99, 211, 255, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.blink {
+  animation: blinker 1.5s linear infinite;
+}
+@keyframes blinker {
+  50% {
+    opacity: 0.4;
+  }
+}

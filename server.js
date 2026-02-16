@@ -1,14 +1,14 @@
 /**
  * server.js
  * ----------
- * שרת הצ'אט שמחבר בין המשתמש, OpenAI ושרתי MCP מרוחקים.
+ * כולל תיקון: החזרת רשימת הכלים שהופעלו ללקוח + System Prompt חזק יותר
  */
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import OpenAI from "openai";
-import { EventSource } from "eventsource"; // חובה ל-SSE Client
-global.EventSource = EventSource; // Polyfill ל-Node
+import { EventSource } from "eventsource";
+global.EventSource = EventSource;
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
@@ -23,35 +23,34 @@ app.use(express.static(path.join(__dirname, "public")));
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const chats = new Map();
+
+// חיזקתי את ההנחיה כדי שהמודל ידע להשתמש בכלים
 const SYSTEM_PROMPT =
-  "אתה עוזר חכם שיכול להשתמש בכלים חיצוניים (MCP). ענה בעברית.";
+  "You are a helpful assistant. You have access to external tools (MCP). " +
+  "ALWAYS checks if a tool can answer the user's request before saying you don't know. " +
+  "If the user asks about weather, use the 'get_weather' tool. Answer in Hebrew.";
 
-// --- פונקציות עזר ל-OpenAI ---
-
-// 1. חיבור לשרת MCP וקבלת רשימת הכלים שלו
 async function connectToMcp(mcpConfig) {
-  if (mcpConfig.type !== "http") return null; // תומכים כרגע רק ב-HTTP ב-Render
-
+  if (mcpConfig.type !== "http") return null;
   try {
     const transport = new SSEClientTransport(new URL(mcpConfig.url));
     const mcpClient = new Client(
       { name: "chatbot-client", version: "1.0.0" },
       { capabilities: {} },
     );
-
     await mcpClient.connect(transport);
-
     const toolsResult = await mcpClient.listTools();
-    const tools = toolsResult.tools || [];
-
-    return { client: mcpClient, tools, id: mcpConfig.id };
+    return {
+      client: mcpClient,
+      tools: toolsResult.tools || [],
+      id: mcpConfig.id,
+    };
   } catch (err) {
     console.error(`Failed to connect to MCP ${mcpConfig.id}:`, err.message);
     return null;
   }
 }
 
-// 2. המרת כלי MCP לפורמט של OpenAI
 function mapMcpToolToOpenAi(tool) {
   return {
     type: "function",
@@ -63,16 +62,12 @@ function mapMcpToolToOpenAi(tool) {
   };
 }
 
-// --- ניהול צ'אט ---
-
 function getOrCreateChat(chatId) {
   if (!chats.has(chatId)) {
     chats.set(chatId, [{ role: "system", content: SYSTEM_PROMPT }]);
   }
   return chats.get(chatId);
 }
-
-// --- API Endpoints ---
 
 app.post("/api/chat", async (req, res) => {
   try {
@@ -83,27 +78,25 @@ app.post("/api/chat", async (req, res) => {
     const history = getOrCreateChat(chatId);
     history.push({ role: "user", content: message });
 
-    // 1. איסוף כל ה-MCPs הפעילים
+    // 1. חיבור ל-MCPs
     const mcpConfigs = listMcps();
-    const activeClients = []; // נשמור את הקליינטים הפתוחים כדי לסגור בסוף
     const allTools = [];
-    const clientMap = new Map(); // מיפוי שם כלי -> קליינט
+    const clientMap = new Map();
 
-    // 2. חיבור דינמי לכל השרתים (בפרודקשן כדאי לשמור חיבורים פתוחים, כאן נפתח ונסגור)
     for (const conf of mcpConfigs) {
       const connection = await connectToMcp(conf);
       if (connection) {
-        activeClients.push(connection.client);
-
         for (const tool of connection.tools) {
           allTools.push(mapMcpToolToOpenAi(tool));
-          clientMap.set(tool.name, connection.client); // כדי שנדע איזה קליינט מריץ איזה כלי
+          clientMap.set(tool.name, connection.client);
         }
       }
     }
 
-    // 3. שליחה ל-OpenAI עם הכלים
     console.log(`Sending to OpenAI with ${allTools.length} tools`);
+
+    // משתנה לשמירת הכלים שהופעלו בפועל
+    const usedToolsLog = [];
 
     let response = await client.chat.completions.create({
       model: "gpt-4o-mini",
@@ -113,32 +106,33 @@ app.post("/api/chat", async (req, res) => {
 
     let msg = response.choices[0].message;
 
-    // 4. לולאת טיפול ב-Function Calling (אם המודל ביקש להריץ כלי)
+    // לולאת הפעלת כלים
     while (msg.tool_calls) {
-      history.push(msg); // מוסיפים את בקשת המודל להיסטוריה
+      history.push(msg);
 
       for (const toolCall of msg.tool_calls) {
         const fnName = toolCall.function.name;
         const args = JSON.parse(toolCall.function.arguments);
-        const mcpClient = clientMap.get(fnName);
 
-        let resultContent = "Error: Tool not found or client disconnected";
+        // רישום ללוג שהכלי הופעל
+        usedToolsLog.push({ name: fnName, args });
+
+        const mcpClient = clientMap.get(fnName);
+        let resultContent = "Error: Tool not found";
 
         if (mcpClient) {
           try {
-            console.log(`Executing tool ${fnName} on MCP...`);
+            console.log(`Executing tool ${fnName}...`);
             const result = await mcpClient.callTool({
               name: fnName,
               arguments: args,
             });
-            // MCP מחזיר מערך של content, אנחנו צריכים טקסט ל-OpenAI
             resultContent = result.content.map((c) => c.text).join("\n");
           } catch (e) {
-            resultContent = `Error executing tool: ${e.message}`;
+            resultContent = `Error: ${e.message}`;
           }
         }
 
-        // מחזירים את התוצאה להיסטוריה
         history.push({
           role: "tool",
           tool_call_id: toolCall.id,
@@ -146,7 +140,6 @@ app.post("/api/chat", async (req, res) => {
         });
       }
 
-      // שולחים שוב ל-OpenAI עם התוצאות
       response = await client.chat.completions.create({
         model: "gpt-4o-mini",
         messages: history,
@@ -155,36 +148,29 @@ app.post("/api/chat", async (req, res) => {
       msg = response.choices[0].message;
     }
 
-    // 5. תשובה סופית
     const reply = msg.content || "";
     history.push({ role: "assistant", content: reply });
 
-    // ניקוי משאבים (סגירת חיבורי SSE)
-    // הערה: בפרודקשן עדיף להשאיר פתוח, אבל ב-Render חינמי עדיף לנקות
-    /* activeClients.forEach(c => c.close().catch(() => {})); */
-    // ה-SDK הנוכחי לא תמיד חושף close בצורה נקייה בגרסאות מסוימות, ניתן להשאיר לגארבג' קולקטור
-
-    res.json({ reply });
+    // שולחים חזרה גם את התשובה וגם את הכלים שהיו בשימוש
+    res.json({ reply, usedTools: usedToolsLog });
   } catch (err) {
     console.error("Chat error:", err);
     res.status(500).json({ error: "Server error: " + err.message });
   }
 });
 
-// MCP Management API
+// שאר ה-API נשאר זהה...
 app.get("/api/mcps", (req, res) => res.json({ servers: listMcps() }));
 app.post("/api/mcps/http", (req, res) => {
   try {
-    const added = addHttpMcp(req.body);
-    res.json({ ok: true, added });
+    res.json({ ok: true, added: addHttpMcp(req.body) });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
 });
 app.post("/api/mcps/local", (req, res) => {
   try {
-    const added = addLocalMcp(req.body);
-    res.json({ ok: true, added });
+    res.json({ ok: true, added: addLocalMcp(req.body) });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
