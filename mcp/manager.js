@@ -1,32 +1,21 @@
-/**
- * mcp/manager.js
- * ---------------
- * זה registry שמנהל רשימת MCPs שנוספו מה-UI.
- *
- * למה זה קיים?
- * - כדי לאפשר "צרף MCP URL" ואז להציג אותו בממשק
- * - כדי לשמור structure קבוע (id/label/type/url וכו')
- *
- * כרגע זה נשמר ב-RAM בלבד:
- * - אם Render עושה restart => הרשימה תימחק.
- * אפשר בעתיד להחליף ל-DB/Redis/קובץ.
- */
-
+// mcp/manager.js
 const mcps = new Map();
 
-/**
- * normalize:
- * המשתמש יכניס לרוב:
- *   https://render-uplaude.onrender.com
- * אבל MCP endpoint בפועל הוא:
- *   https://render-uplaude.onrender.com/mcp
- */
+// הופך URL רגיל לנקודת קצה של SSE
+// אם המשתמש מכניס https://my-app.onrender.com
+// אנחנו רוצים https://my-app.onrender.com/sse
 function normalizeMcpUrl(url) {
-  const u = String(url || "")
+  let u = String(url || "")
     .trim()
     .replace(/\/+$/, "");
   if (!u) throw new Error("url is required");
-  return u.endsWith("/mcp") ? u : `${u}/mcp`;
+
+  // אם המשתמש כבר שם סיומת, לא ניגע. אחרת נוסיף /sse
+  if (u.endsWith("/sse")) return u;
+  // אם הוא שם /mcp (מהקוד הקודם), נחליף ל /sse
+  if (u.endsWith("/mcp")) return u.replace("/mcp", "/sse");
+
+  return `${u}/sse`;
 }
 
 export function listMcps() {
@@ -34,44 +23,21 @@ export function listMcps() {
 }
 
 export function addHttpMcp({ id, label, url }) {
-  if (!id || typeof id !== "string") throw new Error("id is required");
-  if (!label || typeof label !== "string") throw new Error("label is required");
-  if (!url || typeof url !== "string") throw new Error("url is required");
-
+  if (!id || !label || !url) throw new Error("Missing fields");
   const normalized = normalizeMcpUrl(url);
-
-  const obj = {
-    id,
-    label,
-    type: "http",
-    url: normalized,
-    addedAt: Date.now(),
-  };
-
+  const obj = { id, label, type: "http", url: normalized, addedAt: Date.now() };
   mcps.set(id, obj);
   return obj;
 }
 
-export function addLocalMcp({ id, label, command, args }) {
-  if (!id || typeof id !== "string") throw new Error("id is required");
-  if (!label || typeof label !== "string") throw new Error("label is required");
-  if (!command || typeof command !== "string")
-    throw new Error("command is required");
-
-  const obj = {
-    id,
-    label,
-    type: "stdio",
-    command,
-    args: Array.isArray(args) ? args : [],
-    addedAt: Date.now(),
-  };
-
-  mcps.set(id, obj);
+// Local MCPs (stdio) are harder to support in Render directly without child_process
+// נשאיר את הפונקציה כדי שהקוד לא ישבר, אבל בפועל נשתמש בעיקר ב-HTTP
+export function addLocalMcp(data) {
+  const obj = { ...data, type: "stdio", addedAt: Date.now() };
+  mcps.set(data.id, obj);
   return obj;
 }
 
 export function removeMcp(id) {
-  if (!mcps.has(id)) throw new Error("MCP not found");
   mcps.delete(id);
 }

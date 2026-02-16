@@ -8,6 +8,8 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "openai": "^4.57.0"
+    "openai": "^4.57.0",
+    "@modelcontextprotocol/sdk": "^1.0.1",
+    "eventsource": "^3.0.2"
   }
 }

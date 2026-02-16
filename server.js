@@ -1,21 +1,17 @@
 /**
  * server.js
  * ----------
- * שרת Express שמריץ:
- * 1) Frontend סטטי מתוך /public
- * 2) API לצ'אט מול OpenAI עם זיכרון לפי chatId
- * 3) API לניהול MCPs דרך registry (mcp/manager.js)
- *
- * חשוב:
- * - כדי שה-LLM "יזכור" שיחה — אנחנו שולחים לו בכל בקשה את history של אותו chatId.
- * - את OPENAI_API_KEY חייבים להגדיר ב-Render (Environment Variables) ובמחשב המקומי (.env או setx).
+ * שרת הצ'אט שמחבר בין המשתמש, OpenAI ושרתי MCP מרוחקים.
  */
-
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import OpenAI from "openai";
+import { EventSource } from "eventsource"; // חובה ל-SSE Client
+global.EventSource = EventSource; // Polyfill ל-Node
 
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { listMcps, addHttpMcp, addLocalMcp, removeMcp } from "./mcp/manager.js";
 
 const app = express();
@@ -23,36 +19,51 @@ app.use(express.json({ limit: "1mb" }));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// מגיש את האתר (index.html, app.js, style.css)
 app.use(express.static(path.join(__dirname, "public")));
 
-// Render health check
-app.get("/healthz", (req, res) => res.status(200).send("ok"));
-
-// OpenAI client
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-// ===============================
-// זיכרון שיחות בשרת (RAM)
-// ===============================
-/**
- * chats Map:
- * chatId => messages[]
- * messages בפורמט של OpenAI Chat Completions:
- *  { role: "system"|"user"|"assistant", content: "..." }
- *
- * הערה: ב-Render free יכול להיות restart ואז הזיכרון בשרת יימחק.
- * עדיין יש זיכרון בלקוח (LocalStorage), אבל השרת יתחיל מחדש אם יופעל מחדש.
- * אם רוצים persistent אמיתי: DB / Redis.
- */
 const chats = new Map();
-
 const SYSTEM_PROMPT =
-  "אתה עוזר שימושי, חד וברור. ענה בעברית. התבסס על ההיסטוריה של הצ'אט הנוכחי.";
+  "אתה עוזר חכם שיכול להשתמש בכלים חיצוניים (MCP). ענה בעברית.";
 
-// כמה "פניות" לשמור כדי לא להתנפח (20 = בערך 40 הודעות user+assistant)
-const MAX_TURNS = 20;
+// --- פונקציות עזר ל-OpenAI ---
+
+// 1. חיבור לשרת MCP וקבלת רשימת הכלים שלו
+async function connectToMcp(mcpConfig) {
+  if (mcpConfig.type !== "http") return null; // תומכים כרגע רק ב-HTTP ב-Render
+
+  try {
+    const transport = new SSEClientTransport(new URL(mcpConfig.url));
+    const mcpClient = new Client(
+      { name: "chatbot-client", version: "1.0.0" },
+      { capabilities: {} },
+    );
+
+    await mcpClient.connect(transport);
+
+    const toolsResult = await mcpClient.listTools();
+    const tools = toolsResult.tools || [];
+
+    return { client: mcpClient, tools, id: mcpConfig.id };
+  } catch (err) {
+    console.error(`Failed to connect to MCP ${mcpConfig.id}:`, err.message);
+    return null;
+  }
+}
+
+// 2. המרת כלי MCP לפורמט של OpenAI
+function mapMcpToolToOpenAi(tool) {
+  return {
+    type: "function",
+    function: {
+      name: tool.name,
+      description: tool.description || "",
+      parameters: tool.inputSchema || {},
+    },
+  };
+}
+
+// --- ניהול צ'אט ---
 
 function getOrCreateChat(chatId) {
   if (!chats.has(chatId)) {
@@ -61,125 +72,131 @@ function getOrCreateChat(chatId) {
   return chats.get(chatId);
 }
 
-function trimHistory(messages) {
-  // משאירים system ראשון, ומקצצים את היתר
-  const system = messages[0]?.role === "system" ? [messages[0]] : [];
-  const rest = messages.filter((m) => m.role !== "system");
-  const maxMsgs = MAX_TURNS * 2;
-  return [...system, ...rest.slice(-maxMsgs)];
-}
+// --- API Endpoints ---
 
-// מוחק צ'אט מהזיכרון של השרת
-app.delete("/api/chat/:chatId", (req, res) => {
-  const { chatId } = req.params;
-  chats.delete(chatId);
-  res.json({ ok: true });
-});
-
-// ===============================
-// API: Chat
-// ===============================
-/**
- * POST /api/chat
- * body: { chatId, message }
- * response: { reply }
- */
 app.post("/api/chat", async (req, res) => {
   try {
-    const { chatId, message } = req.body || {};
+    const { chatId, message } = req.body;
+    if (!chatId || !message)
+      return res.status(400).json({ error: "Missing data" });
 
-    if (!chatId || typeof chatId !== "string") {
-      return res.status(400).json({ error: "chatId is required" });
-    }
-    if (!message || typeof message !== "string") {
-      return res.status(400).json({ error: "message is required" });
-    }
-
-    // 1) מביאים history לצ'אט הזה
     const history = getOrCreateChat(chatId);
-
-    // 2) מוסיפים הודעת משתמש
     history.push({ role: "user", content: message });
-    chats.set(chatId, trimHistory(history));
 
-    // 3) שולחים ל-OpenAI את כל ההיסטוריה של אותו chatId
-    const completion = await client.chat.completions.create({
+    // 1. איסוף כל ה-MCPs הפעילים
+    const mcpConfigs = listMcps();
+    const activeClients = []; // נשמור את הקליינטים הפתוחים כדי לסגור בסוף
+    const allTools = [];
+    const clientMap = new Map(); // מיפוי שם כלי -> קליינט
+
+    // 2. חיבור דינמי לכל השרתים (בפרודקשן כדאי לשמור חיבורים פתוחים, כאן נפתח ונסגור)
+    for (const conf of mcpConfigs) {
+      const connection = await connectToMcp(conf);
+      if (connection) {
+        activeClients.push(connection.client);
+
+        for (const tool of connection.tools) {
+          allTools.push(mapMcpToolToOpenAi(tool));
+          clientMap.set(tool.name, connection.client); // כדי שנדע איזה קליינט מריץ איזה כלי
+        }
+      }
+    }
+
+    // 3. שליחה ל-OpenAI עם הכלים
+    console.log(`Sending to OpenAI with ${allTools.length} tools`);
+
+    let response = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: chats.get(chatId),
-      temperature: 0.6,
+      messages: history,
+      tools: allTools.length > 0 ? allTools : undefined,
     });
 
-    const reply = completion.choices?.[0]?.message?.content?.trim() || "";
+    let msg = response.choices[0].message;
 
-    // 4) שומרים תשובת מודל בהיסטוריה
-    const updated = chats.get(chatId);
-    updated.push({ role: "assistant", content: reply });
-    chats.set(chatId, trimHistory(updated));
+    // 4. לולאת טיפול ב-Function Calling (אם המודל ביקש להריץ כלי)
+    while (msg.tool_calls) {
+      history.push(msg); // מוסיפים את בקשת המודל להיסטוריה
+
+      for (const toolCall of msg.tool_calls) {
+        const fnName = toolCall.function.name;
+        const args = JSON.parse(toolCall.function.arguments);
+        const mcpClient = clientMap.get(fnName);
+
+        let resultContent = "Error: Tool not found or client disconnected";
+
+        if (mcpClient) {
+          try {
+            console.log(`Executing tool ${fnName} on MCP...`);
+            const result = await mcpClient.callTool({
+              name: fnName,
+              arguments: args,
+            });
+            // MCP מחזיר מערך של content, אנחנו צריכים טקסט ל-OpenAI
+            resultContent = result.content.map((c) => c.text).join("\n");
+          } catch (e) {
+            resultContent = `Error executing tool: ${e.message}`;
+          }
+        }
+
+        // מחזירים את התוצאה להיסטוריה
+        history.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: resultContent,
+        });
+      }
+
+      // שולחים שוב ל-OpenAI עם התוצאות
+      response = await client.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: history,
+        tools: allTools.length > 0 ? allTools : undefined,
+      });
+      msg = response.choices[0].message;
+    }
+
+    // 5. תשובה סופית
+    const reply = msg.content || "";
+    history.push({ role: "assistant", content: reply });
+
+    // ניקוי משאבים (סגירת חיבורי SSE)
+    // הערה: בפרודקשן עדיף להשאיר פתוח, אבל ב-Render חינמי עדיף לנקות
+    /* activeClients.forEach(c => c.close().catch(() => {})); */
+    // ה-SDK הנוכחי לא תמיד חושף close בצורה נקייה בגרסאות מסוימות, ניתן להשאיר לגארבג' קולקטור
 
     res.json({ reply });
   } catch (err) {
-    console.error("chat error:", err?.message || err);
-    res.status(500).json({ error: "Server error" });
+    console.error("Chat error:", err);
+    res.status(500).json({ error: "Server error: " + err.message });
   }
 });
 
-// ===============================
-// API: MCP Registry
-// ===============================
-/**
- * GET /api/mcps
- * מחזיר רשימת MCPs שנוספו
- */
-app.get("/api/mcps", (req, res) => {
-  res.json({ servers: listMcps() });
-});
-
-/**
- * POST /api/mcps/http
- * body: { id, label, url }
- * מוסיף MCP Render URL
- */
+// MCP Management API
+app.get("/api/mcps", (req, res) => res.json({ servers: listMcps() }));
 app.post("/api/mcps/http", (req, res) => {
   try {
-    const { id, label, url } = req.body || {};
-    const added = addHttpMcp({ id, label, url });
+    const added = addHttpMcp(req.body);
     res.json({ ok: true, added });
   } catch (e) {
-    res.status(400).json({ error: e.message || "Failed to add MCP" });
+    res.status(400).json({ error: e.message });
   }
 });
-
-/**
- * POST /api/mcps/local
- * body: { id, label, command, args }
- * מוסיף MCP מקומי (stdio) כרשומה
- * הערה: ב-Render זה לא יכול לרוץ באמת, אבל נשמר כדי שתראה אותו ברשימה.
- */
 app.post("/api/mcps/local", (req, res) => {
   try {
-    const { id, label, command, args } = req.body || {};
-    const added = addLocalMcp({ id, label, command, args });
+    const added = addLocalMcp(req.body);
     res.json({ ok: true, added });
   } catch (e) {
-    res.status(400).json({ error: e.message || "Failed to add local MCP" });
+    res.status(400).json({ error: e.message });
   }
 });
-
-/**
- * DELETE /api/mcps/:id
- * מוחק MCP מהרשימה
- */
 app.delete("/api/mcps/:id", (req, res) => {
-  try {
-    removeMcp(req.params.id);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(400).json({ error: e.message || "Failed to remove MCP" });
-  }
+  removeMcp(req.params.id);
+  res.json({ ok: true });
+});
+app.delete("/api/chat/:chatId", (req, res) => {
+  chats.delete(req.params.chatId);
+  res.json({ ok: true });
 });
 
-// ===============================
-// Start
-// ===============================
 const port = process.env.PORT || 3000;
 app.listen(port, "0.0.0.0", () => console.log("Chatbot listening on", port));

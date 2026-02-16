@@ -28,23 +28,25 @@
       </div>
 
       <div class="grid">
-        <!-- CHAT -->
         <div class="panel">
           <div class="panel-title">צ'אט</div>
           <div id="chat" class="chat"></div>
 
           <form id="form" class="bar">
-            <input id="input" placeholder="כתוב הודעה..." autocomplete="off" />
+            <input
+              id="input"
+              placeholder="כתוב הודעה... (למשל: מה מזג האוויר בחיפה?)"
+              autocomplete="off"
+            />
             <button id="send" type="submit">שלח</button>
           </form>
 
           <div class="hint">
-            טיפ: כל צ'אט נשמר ב-LocalStorage + server memory כדי שהמודל יתבסס על
-            ההיסטוריה.
+            טיפ: המודל יחפש אוטומטית כלים בשרתי ה-MCP המחוברים ויפעיל אותם במידת
+            הצורך.
           </div>
         </div>
 
-        <!-- MCP -->
         <div class="panel">
           <div class="panel-title row">
             <span>MCPs מחוברים</span>
@@ -57,47 +59,44 @@
           <div id="mcpList" class="mcp-list"></div>
 
           <div class="hint">
-            Render MCP חייב להיות חשוף בנתיב <code>/mcp</code>. אם הכנסת URL בלי
-            /mcp, המערכת תוסיף לבד.
+            השרת מתחבר ל-MCP באמצעות SSE. וודא ששרת ה-MCP שלך פתוח לאינטרנט.
           </div>
         </div>
       </div>
     </div>
 
-    <!-- MCP Modal -->
     <div id="modalOverlay" class="modal-overlay hidden">
       <div class="modal">
         <div class="modal-head">
           <div>
             <div class="modal-title">צרף MCP</div>
             <div class="modal-sub">
-              הוסף MCP דרך Render URL או MCP מקומי (stdio)
+              הוסף שרת MCP מרוחק (Render/Vercel) או מקומי
             </div>
           </div>
           <button id="closeModalBtn" class="xbtn" type="button">✕</button>
         </div>
 
         <div class="tabs">
-          <button class="tab active" data-tab="http">Render URL (HTTP)</button>
+          <button class="tab active" data-tab="http">Render URL (SSE)</button>
           <button class="tab" data-tab="stdio">Local MCP (stdio)</button>
         </div>
 
         <div class="tabpanes">
-          <!-- HTTP -->
           <div class="pane" data-pane="http">
             <div class="field">
-              <label>ID (למשל: weather)</label>
+              <label>ID (למשל: weather-server)</label>
               <input id="httpId" placeholder="weather" />
             </div>
             <div class="field">
-              <label>Label</label>
+              <label>Label (שם לתצוגה)</label>
               <input id="httpLabel" placeholder="Weather Service" />
             </div>
             <div class="field">
-              <label>Render URL (בלי /mcp)</label>
+              <label>URL (למשל: https://my-app.onrender.com)</label>
               <input
                 id="httpUrl"
-                placeholder="https://render-uplaude.onrender.com"
+                placeholder="https://render-uplaude-mcp.onrender.com"
               />
             </div>
 
@@ -106,26 +105,33 @@
               <button id="cancelBtn1" class="ghost" type="button">ביטול</button>
             </div>
 
+            <div class="hint">
+              המערכת תוסיף אוטומטית <code>/sse</code> לכתובת אם לא תציין נתיב
+              אחר.
+            </div>
+
             <div id="httpStatus" class="status"></div>
           </div>
 
-          <!-- STDIO -->
           <div class="pane hidden" data-pane="stdio">
             <div class="field">
               <label>ID</label>
-              <input id="localId" placeholder="local-weather" />
+              <input id="localId" placeholder="local-files" />
             </div>
             <div class="field">
               <label>Label</label>
-              <input id="localLabel" placeholder="Local Weather" />
+              <input id="localLabel" placeholder="Local Filesystem" />
             </div>
             <div class="field">
               <label>Command</label>
-              <input id="localCmd" placeholder="node" />
+              <input id="localCmd" placeholder="npx" />
             </div>
             <div class="field">
               <label>Args (מופרד בפסיקים)</label>
-              <input id="localArgs" placeholder="src/index.js" />
+              <input
+                id="localArgs"
+                placeholder="-y, @modelcontextprotocol/server-filesystem, /Users/me/Desktop"
+              />
             </div>
 
             <div class="actions">
@@ -134,8 +140,8 @@
             </div>
 
             <div class="hint">
-              MCP מקומי (stdio) עובד רק בהרצה מקומית. ב-Render זה נשמר כרשומה
-              בלבד.
+              MCP מקומי (stdio) רלוונטי רק אם אתה מריץ את הצ'אט הזה לוקאלית על
+              המחשב שלך.
             </div>
 
             <div id="localStatus" class="status"></div>

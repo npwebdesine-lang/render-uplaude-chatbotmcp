@@ -1,11 +1,10 @@
 /**
  * public/app.js
  * -------------
- * Frontend:
- * - multi chat (יצירה/מחיקה/מעבר)
- * - שמירת הודעות ב-LocalStorage
- * - חיבור לשרת שמחזיק גם הוא history כדי שה-LLM יתבסס עליו
- * - ניהול MCPs (הוספה/מחיקה/רשימה)
+ * Frontend Logic:
+ * - ניהול צ'אט (מקומי + שרת)
+ * - ניהול MCP Registry
+ * - אינדיקציה לטעינה בזמן שה-MCP עובד
  */
 
 const chatEl = document.getElementById("chat");
@@ -50,7 +49,7 @@ const localStatus = document.getElementById("localStatus");
 // ===============================
 // Multi-chat (LocalStorage)
 // ===============================
-const STORAGE_KEY = "mcp_chatbot_multi_v2";
+const STORAGE_KEY = "mcp_chatbot_multi_v3";
 
 let state = loadState();
 
@@ -97,8 +96,10 @@ function addBubble(text, who = "me") {
 function renderActiveChat() {
   clearChatUI();
   const active = getActiveChat();
-  for (const m of active.messages) {
-    addBubble(m.text, m.who);
+  if (active && active.messages) {
+    for (const m of active.messages) {
+      addBubble(m.text, m.who);
+    }
   }
 }
 
@@ -186,6 +187,7 @@ form.addEventListener("submit", async (e) => {
   const chatId = state.activeChatId;
   const activeChat = getActiveChat();
 
+  // 1. שמירה והצגה של הודעת המשתמש
   activeChat.messages.push({ who: "me", text: msg });
   renameChatIfFirstMessage(chatId, msg);
 
@@ -197,19 +199,39 @@ form.addEventListener("submit", async (e) => {
   input.focus();
   sendBtn.disabled = true;
 
+  // 2. יצירת בועת טעינה (הבוט חושב/פונה ל-MCP)
+  const loadingId = "loader-" + Date.now();
+  const loadingBubble = document.createElement("div");
+  loadingBubble.className = "bubble bot blink";
+  loadingBubble.id = loadingId;
+  loadingBubble.textContent = "● ● ●";
+  chatEl.appendChild(loadingBubble);
+  chatEl.scrollTop = chatEl.scrollHeight;
+
   try {
+    // 3. שליחה לשרת
     const r = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chatId, message: msg }),
     });
     const data = await r.json().catch(() => ({}));
+
+    // 4. הסרת בועת הטעינה
+    const loader = document.getElementById(loadingId);
+    if (loader) loader.remove();
+
     if (!r.ok) throw new Error(data?.error || "Request failed");
 
+    // 5. שמירה והצגה של תשובת הבוט
     activeChat.messages.push({ who: "bot", text: data.reply });
     saveState();
     addBubble(data.reply, "bot");
   } catch (err) {
+    // במקרה של שגיאה, נסיר את הטעינה ונציג שגיאה
+    const loader = document.getElementById(loadingId);
+    if (loader) loader.remove();
+
     const text = "שגיאה: " + err.message;
     activeChat.messages.push({ who: "bot", text });
     saveState();
@@ -226,6 +248,10 @@ function openModal() {
   modalOverlay.classList.remove("hidden");
   httpStatus.textContent = "";
   localStatus.textContent = "";
+  // Reset HTTP inputs
+  httpId.value = "";
+  httpLabel.value = "";
+  httpUrl.value = "";
 }
 
 function closeModal() {
@@ -255,11 +281,15 @@ tabs.forEach((t) => {
 });
 
 async function refreshMcps() {
-  const r = await fetch("/api/mcps");
-  const data = await r.json();
-  const servers = data.servers || [];
-  mcpStats.textContent = `Servers: ${servers.length}`;
-  renderMcpList(servers);
+  try {
+    const r = await fetch("/api/mcps");
+    const data = await r.json();
+    const servers = data.servers || [];
+    mcpStats.textContent = `Servers: ${servers.length}`;
+    renderMcpList(servers);
+  } catch (e) {
+    console.error("Failed to fetch MCPs", e);
+  }
 }
 
 function renderMcpList(servers) {
@@ -302,12 +332,18 @@ function escapeHtml(str) {
 // add http
 addHttpBtn.addEventListener("click", async () => {
   try {
-    httpStatus.textContent = "מוסיף...";
+    httpStatus.textContent = "מתחבר...";
+    httpStatus.style.color = "var(--muted)";
+
     const body = {
       id: httpId.value.trim(),
       label: httpLabel.value.trim(),
       url: httpUrl.value.trim(),
     };
+
+    if (!body.id || !body.label || !body.url) {
+      throw new Error("נא למלא את כל השדות");
+    }
 
     const r = await fetch("/api/mcps/http", {
       method: "POST",
@@ -318,17 +354,22 @@ addHttpBtn.addEventListener("click", async () => {
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data?.error || "Failed");
 
-    httpStatus.textContent = "✅ נוסף";
-    await refreshMcps();
+    httpStatus.textContent = "✅ נוסף בהצלחה";
+    httpStatus.style.color = "#4caf50";
+    setTimeout(() => {
+      closeModal();
+      refreshMcps();
+    }, 1000);
   } catch (e) {
     httpStatus.textContent = "❌ " + e.message;
+    httpStatus.style.color = "var(--red)";
   }
 });
 
 // add local
 addLocalBtn.addEventListener("click", async () => {
   try {
-    localStatus.textContent = "מוסיף...";
+    localStatus.textContent = "מוסיף רשומה...";
     const body = {
       id: localId.value.trim(),
       label: localLabel.value.trim(),
@@ -349,9 +390,14 @@ addLocalBtn.addEventListener("click", async () => {
     if (!r.ok) throw new Error(data?.error || "Failed");
 
     localStatus.textContent = "✅ נוסף";
-    await refreshMcps();
+    localStatus.style.color = "#4caf50";
+    setTimeout(() => {
+      closeModal();
+      refreshMcps();
+    }, 1000);
   } catch (e) {
     localStatus.textContent = "❌ " + e.message;
+    localStatus.style.color = "var(--red)";
   }
 });
 
