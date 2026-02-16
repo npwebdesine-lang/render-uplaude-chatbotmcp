@@ -1,7 +1,8 @@
 /**
- * server.js
- * ----------
- * כולל תיקון: החזרת רשימת הכלים שהופעלו ללקוח + System Prompt חזק יותר
+ * server.js (Debug Version)
+ * -------------------------
+ * גרסה זו מדפיסה לוגים לתוך ה-Console של Render
+ * ומכריחה את המודל לדווח על שגיאות טכניות בצ'אט.
  */
 import express from "express";
 import path from "path";
@@ -24,29 +25,55 @@ app.use(express.static(path.join(__dirname, "public")));
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const chats = new Map();
 
-// חיזקתי את ההנחיה כדי שהמודל ידע להשתמש בכלים
-const SYSTEM_PROMPT =
-  "You are a helpful assistant. You have access to external tools (MCP). " +
-  "ALWAYS checks if a tool can answer the user's request before saying you don't know. " +
-  "If the user asks about weather, use the 'get_weather' tool. Answer in Hebrew.";
+// הנחיה חזקה למודל להשתמש בכלים ולדווח על שגיאות
+const SYSTEM_PROMPT = `
+You are a helpful assistant capable of using external MCP tools.
+1. If the user asks for weather, YOU MUST use the 'get_weather' tool.
+2. If the tool execution fails, tell the user exactly what the error was (e.g., "Connection failed", "Tool not found").
+3. Do not apologize or say "I don't have access" without trying the tool first.
+4. Answer in Hebrew.
+`;
+
+// פונקציית עזר ללוגים
+function log(msg, data = "") {
+  console.log(
+    `[${new Date().toISOString()}] ${msg}`,
+    data ? JSON.stringify(data).slice(0, 200) : "",
+  );
+}
 
 async function connectToMcp(mcpConfig) {
   if (mcpConfig.type !== "http") return null;
+  log(`Connecting to MCP: ${mcpConfig.id} at ${mcpConfig.url}`);
+
   try {
     const transport = new SSEClientTransport(new URL(mcpConfig.url));
     const mcpClient = new Client(
       { name: "chatbot-client", version: "1.0.0" },
       { capabilities: {} },
     );
-    await mcpClient.connect(transport);
+
+    // ניסיון חיבור עם Timeout
+    const connectPromise = mcpClient.connect(transport);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout connecting to MCP")), 5000),
+    );
+
+    await Promise.race([connectPromise, timeoutPromise]);
+
     const toolsResult = await mcpClient.listTools();
+    log(
+      `Connected to ${mcpConfig.id}. Tools found:`,
+      toolsResult.tools.map((t) => t.name),
+    );
+
     return {
       client: mcpClient,
       tools: toolsResult.tools || [],
       id: mcpConfig.id,
     };
   } catch (err) {
-    console.error(`Failed to connect to MCP ${mcpConfig.id}:`, err.message);
+    log(`ERROR connecting to MCP ${mcpConfig.id}:`, err.message);
     return null;
   }
 }
@@ -56,8 +83,8 @@ function mapMcpToolToOpenAi(tool) {
     type: "function",
     function: {
       name: tool.name,
-      description: tool.description || "",
-      parameters: tool.inputSchema || {},
+      description: tool.description || "A tool",
+      parameters: tool.inputSchema || { type: "object", properties: {} },
     },
   };
 }
@@ -75,6 +102,7 @@ app.post("/api/chat", async (req, res) => {
     if (!chatId || !message)
       return res.status(400).json({ error: "Missing data" });
 
+    log(`New message in chat ${chatId}: ${message}`);
     const history = getOrCreateChat(chatId);
     history.push({ role: "user", content: message });
 
@@ -82,6 +110,8 @@ app.post("/api/chat", async (req, res) => {
     const mcpConfigs = listMcps();
     const allTools = [];
     const clientMap = new Map();
+
+    log(`Loading ${mcpConfigs.length} MCP configs...`);
 
     for (const conf of mcpConfigs) {
       const connection = await connectToMcp(conf);
@@ -93,11 +123,12 @@ app.post("/api/chat", async (req, res) => {
       }
     }
 
-    console.log(`Sending to OpenAI with ${allTools.length} tools`);
+    log(`Tools sent to OpenAI: ${allTools.length}`);
 
-    // משתנה לשמירת הכלים שהופעלו בפועל
+    // משתנה לשמירת הכלים שהופעלו
     const usedToolsLog = [];
 
+    // 2. קריאה ראשונה ל-OpenAI
     let response = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: history,
@@ -106,30 +137,48 @@ app.post("/api/chat", async (req, res) => {
 
     let msg = response.choices[0].message;
 
-    // לולאת הפעלת כלים
+    // 3. לולאת טיפול ב-Function Calling
     while (msg.tool_calls) {
+      log("Model requested tool calls:", msg.tool_calls);
       history.push(msg);
 
       for (const toolCall of msg.tool_calls) {
         const fnName = toolCall.function.name;
-        const args = JSON.parse(toolCall.function.arguments);
+        const argsStr = toolCall.function.arguments;
+        let args;
+        try {
+          args = JSON.parse(argsStr);
+        } catch {
+          args = {};
+        }
 
-        // רישום ללוג שהכלי הופעל
         usedToolsLog.push({ name: fnName, args });
+        log(`Executing tool: ${fnName} with args:`, args);
 
         const mcpClient = clientMap.get(fnName);
-        let resultContent = "Error: Tool not found";
+        let resultContent = "";
 
-        if (mcpClient) {
+        if (!mcpClient) {
+          resultContent = `Error: Tool '${fnName}' not found in connected MCP clients. Available tools: ${Array.from(clientMap.keys()).join(", ")}`;
+          log(resultContent);
+        } else {
           try {
-            console.log(`Executing tool ${fnName}...`);
             const result = await mcpClient.callTool({
               name: fnName,
               arguments: args,
             });
-            resultContent = result.content.map((c) => c.text).join("\n");
+            // בדיקה אם התוצאה היא טעות
+            if (result.isError) {
+              resultContent = `Tool Error: ${JSON.stringify(result)}`;
+            } else {
+              resultContent = result.content.map((c) => c.text).join("\n");
+            }
+            log(
+              `Tool success. Result preview: ${resultContent.slice(0, 50)}...`,
+            );
           } catch (e) {
-            resultContent = `Error: ${e.message}`;
+            resultContent = `System Error executing tool: ${e.message}`;
+            log(`Tool execution failed: ${e.message}`);
           }
         }
 
@@ -140,6 +189,7 @@ app.post("/api/chat", async (req, res) => {
         });
       }
 
+      // קריאה חוזרת ל-OpenAI עם התוצאות
       response = await client.chat.completions.create({
         model: "gpt-4o-mini",
         messages: history,
@@ -149,17 +199,17 @@ app.post("/api/chat", async (req, res) => {
     }
 
     const reply = msg.content || "";
+    log(`Final reply length: ${reply.length}`);
     history.push({ role: "assistant", content: reply });
 
-    // שולחים חזרה גם את התשובה וגם את הכלים שהיו בשימוש
     res.json({ reply, usedTools: usedToolsLog });
   } catch (err) {
-    console.error("Chat error:", err);
+    console.error("CRITICAL Chat error:", err);
     res.status(500).json({ error: "Server error: " + err.message });
   }
 });
 
-// שאר ה-API נשאר זהה...
+// API Endpoints לניהול MCP
 app.get("/api/mcps", (req, res) => res.json({ servers: listMcps() }));
 app.post("/api/mcps/http", (req, res) => {
   try {
