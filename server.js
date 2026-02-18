@@ -20,7 +20,7 @@ const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const chats = new Map();
 
 // מודל 3.5 הוא הכי צייתן מבחינת קריאה לכלים
-const MODEL_NAME = "gpt 4o";
+const MODEL_NAME = "gpt-4o";
 
 const SYSTEM_PROMPT = `
 You are a helpful assistant.
