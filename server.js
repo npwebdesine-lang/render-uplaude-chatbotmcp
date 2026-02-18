@@ -20,12 +20,10 @@ const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const chats = new Map();
 
 // מודל 3.5 הוא הכי צייתן מבחינת קריאה לכלים
-const MODEL_NAME = "gpt-3.5-turbo";
+const MODEL_NAME = "gpt 4o";
 
 const SYSTEM_PROMPT = `
 You are a helpful assistant.
-You have access to a tool named 'get_weather'.
-If the user asks about weather anywhere, YOU MUST CALL 'get_weather'.
 Do not answer from your own knowledge.
 If the tool works, tell the user the result.
 Answer in Hebrew.
