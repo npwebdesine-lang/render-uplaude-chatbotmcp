@@ -1,43 +1,55 @@
 /**
  * public/app.js
- * -------------
- * כולל תצוגה של "Used Tool"
+ * לוגיקת צד לקוח - כולל תמיכה בהפרדת משתמשים (Multi-Tenancy)
  */
 
+// --- מנגנון תעודת זהות וירטואלית ---
+function getUserId() {
+  let uid = localStorage.getItem("chatbot_multi_tenant_uid");
+  if (!uid) {
+    uid = "usr_" + Math.random().toString(36).substring(2, 15);
+    localStorage.setItem("chatbot_multi_tenant_uid", uid);
+  }
+  return uid;
+}
+
+// כותרות קבועות לכל פנייה לשרת
+const apiHeaders = {
+  "Content-Type": "application/json",
+  "X-User-ID": getUserId(), // תעודת הזהות שלנו!
+};
+
+// --- אלמנטים מה-DOM ---
 const chatEl = document.getElementById("chat");
 const form = document.getElementById("form");
 const input = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 const newChatBtn = document.getElementById("newChatBtn");
 const deleteChatBtn = document.getElementById("deleteChatBtn");
-const chatSelect = document.getElementById("chatSelect");
+const chatListEl = document.getElementById("chatList");
+const currentChatTitle = document.getElementById("currentChatTitle");
 const mcpList = document.getElementById("mcpList");
-const mcpStats = document.getElementById("mcpStats");
 const openMcpModalBtn = document.getElementById("openMcpModalBtn");
 const modalOverlay = document.getElementById("modalOverlay");
 const closeModalBtn = document.getElementById("closeModalBtn");
 const cancelBtn1 = document.getElementById("cancelBtn1");
-const cancelBtn2 = document.getElementById("cancelBtn2");
-const tabs = Array.from(document.querySelectorAll(".tab"));
-const panes = Array.from(document.querySelectorAll(".pane"));
+
 const httpId = document.getElementById("httpId");
 const httpLabel = document.getElementById("httpLabel");
 const httpUrl = document.getElementById("httpUrl");
 const addHttpBtn = document.getElementById("addHttpBtn");
 const httpStatus = document.getElementById("httpStatus");
-const localId = document.getElementById("localId");
-const localLabel = document.getElementById("localLabel");
-const localCmd = document.getElementById("localCmd");
-const localArgs = document.getElementById("localArgs");
-const addLocalBtn = document.getElementById("addLocalBtn");
-const localStatus = document.getElementById("localStatus");
 
-const STORAGE_KEY = "mcp_chatbot_multi_v4"; // גרסה חדשה
+const mobileMenuBtn = document.getElementById("mobileMenuBtn");
+const sidebar = document.getElementById("sidebar");
+const closeSidebarBtn = document.getElementById("closeSidebarBtn");
 
+// --- ניהול סטייט (State) מקומי ---
+const STORAGE_KEY = `mcp_chats_${getUserId()}`;
 let state = loadState();
 
 function makeId() {
-  return `chat_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  return `chat_${Date.now()}`;
 }
 
 function loadState() {
@@ -62,28 +74,21 @@ function saveState() {
 function getActiveChat() {
   return state.chats[state.activeChatId];
 }
-function clearChatUI() {
-  chatEl.innerHTML = "";
-}
 
-// --- פונקציה מעודכנת להוספת בועה עם כלים ---
+// --- ניהול ה-UI של הצ'אט ---
 function addBubble(text, who = "me", toolsUsed = []) {
   const div = document.createElement("div");
   div.className = `bubble ${who}`;
 
-  // תוכן ההודעה
   const contentDiv = document.createElement("div");
   contentDiv.textContent = text;
   div.appendChild(contentDiv);
 
-  // אם יש כלים שהופעלו, נוסיף אותם למטה
   if (toolsUsed && toolsUsed.length > 0) {
     const toolsDiv = document.createElement("div");
     toolsDiv.className = "tools-used";
     toolsDiv.innerHTML = toolsUsed
-      .map(
-        (t) => `<div class="tool-badge">⚙️ Used: ${escapeHtml(t.name)}</div>`,
-      )
+      .map((t) => `<div class="tool-badge">⚙️ פעל: ${escapeHtml(t.name)}</div>`)
       .join("");
     div.appendChild(toolsDiv);
   }
@@ -93,8 +98,9 @@ function addBubble(text, who = "me", toolsUsed = []) {
 }
 
 function renderActiveChat() {
-  clearChatUI();
+  chatEl.innerHTML = "";
   const active = getActiveChat();
+  currentChatTitle.textContent = active ? active.title : "צ'אט";
   if (active && active.messages) {
     for (const m of active.messages) {
       addBubble(m.text, m.who, m.tools);
@@ -102,54 +108,53 @@ function renderActiveChat() {
   }
 }
 
-function renderChatSelect() {
-  chatSelect.innerHTML = "";
-  Object.entries(state.chats).forEach(([id, chatObj], idx) => {
-    const opt = document.createElement("option");
-    opt.value = id;
-    opt.textContent = chatObj.title || `צ'אט ${idx + 1}`;
-    if (id === state.activeChatId) opt.selected = true;
-    chatSelect.appendChild(opt);
-  });
+function renderChatSidebarList() {
+  chatListEl.innerHTML = "";
+  Object.entries(state.chats)
+    .reverse()
+    .forEach(([id, chatObj]) => {
+      const btn = document.createElement("button");
+      btn.className = `list-item ${id === state.activeChatId ? "active" : ""}`;
+      btn.textContent = chatObj.title;
+      btn.onclick = () => {
+        state.activeChatId = id;
+        saveState();
+        renderChatSidebarList();
+        renderActiveChat();
+        if (window.innerWidth <= 768) sidebar.classList.remove("open"); // סגירת תפריט במובייל
+      };
+      chatListEl.appendChild(btn);
+    });
 }
 
 function renameChatIfFirstMessage(chatId, firstUserMessage) {
   const c = state.chats[chatId];
   if (c && c.messages.length === 1 && c.title.startsWith("צ'אט")) {
     c.title =
-      firstUserMessage.slice(0, 18) + (firstUserMessage.length > 18 ? "…" : "");
+      firstUserMessage.slice(0, 20) + (firstUserMessage.length > 20 ? "…" : "");
   }
 }
 
-renderChatSelect();
-renderActiveChat();
-
 newChatBtn.addEventListener("click", () => {
   const newId = makeId();
-  state.chats[newId] = {
-    title: `צ'אט ${Object.keys(state.chats).length + 1}`,
-    messages: [],
-  };
+  state.chats[newId] = { title: `צ'אט חדש`, messages: [] };
   state.activeChatId = newId;
   saveState();
-  renderChatSelect();
-  renderActiveChat();
-  input.focus();
-});
-
-chatSelect.addEventListener("change", () => {
-  state.activeChatId = chatSelect.value;
-  saveState();
+  renderChatSidebarList();
   renderActiveChat();
   input.focus();
 });
 
 deleteChatBtn.addEventListener("click", async () => {
   const activeId = state.activeChatId;
-  if (!activeId || !confirm("למחוק?")) return;
+  if (!activeId || !confirm("למחוק את הצ'אט הזה?")) return;
   try {
-    await fetch(`/api/chat/${activeId}`, { method: "DELETE" });
+    await fetch(`/api/chat/${activeId}`, {
+      method: "DELETE",
+      headers: apiHeaders,
+    });
   } catch {}
+
   delete state.chats[activeId];
   const ids = Object.keys(state.chats);
   if (ids.length === 0) {
@@ -157,14 +162,14 @@ deleteChatBtn.addEventListener("click", async () => {
     state.chats[newId] = { title: "צ'אט 1", messages: [] };
     state.activeChatId = newId;
   } else {
-    state.activeChatId = ids[0];
+    state.activeChatId = ids[ids.length - 1];
   }
   saveState();
-  renderChatSelect();
+  renderChatSidebarList();
   renderActiveChat();
-  input.focus();
 });
 
+// שליחת הודעה
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const msg = input.value.trim();
@@ -176,62 +181,53 @@ form.addEventListener("submit", async (e) => {
   activeChat.messages.push({ who: "me", text: msg });
   renameChatIfFirstMessage(chatId, msg);
   saveState();
-  renderChatSelect();
+  renderChatSidebarList();
   addBubble(msg, "me");
 
   input.value = "";
-  input.focus();
   sendBtn.disabled = true;
 
-  const loadingId = "loader-" + Date.now();
+  const loadingId = "loader";
   const loadingBubble = document.createElement("div");
   loadingBubble.className = "bubble bot blink";
   loadingBubble.id = loadingId;
-  loadingBubble.textContent = "● ● ●";
+  loadingBubble.textContent = "מקליד...";
   chatEl.appendChild(loadingBubble);
   chatEl.scrollTop = chatEl.scrollHeight;
 
   try {
     const r = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: apiHeaders,
       body: JSON.stringify({ chatId, message: msg }),
     });
     const data = await r.json().catch(() => ({}));
-
     document.getElementById(loadingId)?.remove();
 
     if (!r.ok) throw new Error(data?.error || "Request failed");
 
-    // שמירה בהיסטוריה כולל הכלים
     activeChat.messages.push({
       who: "bot",
       text: data.reply,
-      tools: data.usedTools, // שומרים את הכלים בזיכרון המקומי
+      tools: data.usedTools,
     });
     saveState();
-
-    // שליחה לבועה כולל הכלים
     addBubble(data.reply, "bot", data.usedTools);
   } catch (err) {
     document.getElementById(loadingId)?.remove();
-    const text = "שגיאה: " + err.message;
-    activeChat.messages.push({ who: "bot", text });
+    activeChat.messages.push({ who: "bot", text: "שגיאה: " + err.message });
     saveState();
-    addBubble(text, "bot");
+    addBubble("שגיאה: " + err.message, "bot");
   } finally {
     sendBtn.disabled = false;
+    input.focus();
   }
 });
 
-// MCP Logic
+// --- MCP UI ---
 function openModal() {
   modalOverlay.classList.remove("hidden");
   httpStatus.textContent = "";
-  localStatus.textContent = "";
-  httpId.value = "";
-  httpLabel.value = "";
-  httpUrl.value = "";
 }
 function closeModal() {
   modalOverlay.classList.add("hidden");
@@ -239,29 +235,12 @@ function closeModal() {
 openMcpModalBtn.addEventListener("click", openModal);
 closeModalBtn.addEventListener("click", closeModal);
 cancelBtn1.addEventListener("click", closeModal);
-cancelBtn2.addEventListener("click", closeModal);
-modalOverlay.addEventListener("click", (e) => {
-  if (e.target === modalOverlay) closeModal();
-});
-
-tabs.forEach((t) => {
-  t.addEventListener("click", () => {
-    tabs.forEach((x) => x.classList.remove("active"));
-    t.classList.add("active");
-    panes.forEach((p) => p.classList.add("hidden"));
-    document
-      .querySelector(`.pane[data-pane="${t.dataset.tab}"]`)
-      .classList.remove("hidden");
-  });
-});
 
 async function refreshMcps() {
   try {
-    const r = await fetch("/api/mcps");
+    const r = await fetch("/api/mcps", { headers: apiHeaders });
     const data = await r.json();
-    const servers = data.servers || [];
-    mcpStats.textContent = `Servers: ${servers.length}`;
-    renderMcpList(servers);
+    renderMcpList(data.servers || []);
   } catch (e) {
     console.error("Failed to fetch MCPs", e);
   }
@@ -270,38 +249,34 @@ async function refreshMcps() {
 function renderMcpList(servers) {
   mcpList.innerHTML = "";
   if (!servers.length) {
-    mcpList.innerHTML = `<div class="empty">לא נוספו MCPs.</div>`;
+    mcpList.innerHTML = `<div style="font-size:12px; color:gray;">אין כלים מחוברים.</div>`;
     return;
   }
   for (const s of servers) {
     const div = document.createElement("div");
-    div.className = "mcp-item";
+    div.className = "list-item mcp-card";
     div.innerHTML = `
-      <div class="mcp-main">
-        <div class="mcp-title">${escapeHtml(s.label)} <span class="pill">${escapeHtml(s.type)}</span></div>
-        <div class="mcp-sub">${escapeHtml(s.id)}</div>
+      <div>
+        <div style="font-weight:bold;">${escapeHtml(s.label)}</div>
+        <div style="font-size:11px; color:#a0c4ff;">${escapeHtml(s.id)}</div>
       </div>
-      <button class="danger sm" data-del="${escapeHtml(s.id)}">מחק</button>
+      <button class="icon-btn danger-text" data-del="${escapeHtml(s.id)}">🗑️</button>
     `;
     mcpList.appendChild(div);
   }
   mcpList.querySelectorAll("[data-del]").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      if (!confirm("למחוק?")) return;
+      if (!confirm("לנתק את הכלי הזה?")) return;
       await fetch(
         `/api/mcps/${encodeURIComponent(btn.getAttribute("data-del"))}`,
-        { method: "DELETE" },
+        {
+          method: "DELETE",
+          headers: apiHeaders,
+        },
       );
       await refreshMcps();
     });
   });
-}
-
-function escapeHtml(str) {
-  return String(str || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
 }
 
 addHttpBtn.addEventListener("click", async () => {
@@ -314,43 +289,34 @@ addHttpBtn.addEventListener("click", async () => {
     };
     const r = await fetch("/api/mcps/http", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: apiHeaders,
       body: JSON.stringify(body),
     });
-    if (!r.ok) throw new Error("Failed");
-    httpStatus.textContent = "✅ נוסף";
+    if (!r.ok) throw new Error("Connection failed");
+    httpStatus.textContent = "✅ חובר בהצלחה";
     setTimeout(() => {
       closeModal();
       refreshMcps();
     }, 1000);
   } catch (e) {
-    httpStatus.textContent = "❌ " + e.message;
+    httpStatus.textContent = "❌ שגיאה: " + e.message;
   }
 });
 
-addLocalBtn.addEventListener("click", async () => {
-  try {
-    localStatus.textContent = "מוסיף...";
-    const body = {
-      id: localId.value.trim(),
-      label: localLabel.value.trim(),
-      command: localCmd.value.trim(),
-      args: localArgs.value.split(","),
-    };
-    const r = await fetch("/api/mcps/local", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) throw new Error("Failed");
-    localStatus.textContent = "✅ נוסף";
-    setTimeout(() => {
-      closeModal();
-      refreshMcps();
-    }, 1000);
-  } catch (e) {
-    localStatus.textContent = "❌ " + e.message;
-  }
-});
+function escapeHtml(str) {
+  return String(str || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
 
+// מובייל Menu Toggle
+mobileMenuBtn.addEventListener("click", () => sidebar.classList.add("open"));
+closeSidebarBtn.addEventListener("click", () =>
+  sidebar.classList.remove("open"),
+);
+
+// אתחול
+renderChatSidebarList();
+renderActiveChat();
 refreshMcps();

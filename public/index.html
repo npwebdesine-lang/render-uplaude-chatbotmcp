@@ -2,151 +2,94 @@
 <html lang="he" dir="rtl">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>MCP Chatbot</title>
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"
+    />
+    <title>AI Workspace</title>
     <link rel="stylesheet" href="style.css" />
   </head>
-
   <body>
-    <div class="wrap">
-      <div class="header">
-        <div class="brand">
-          <div class="logo"></div>
-          <div>
-            <h1>MCP Chatbot</h1>
-            <div class="sub">Multi-chat + MCP Registry</div>
+    <button id="mobileMenuBtn" class="mobile-menu-btn">☰</button>
+
+    <div class="app-container">
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+          <div class="logo-area">
+            <div class="logo"></div>
+            <h2>AI Workspace</h2>
           </div>
-        </div>
-
-        <div class="top-actions">
-          <button id="newChatBtn" class="ghost" type="button">צ'אט חדש</button>
-          <button id="deleteChatBtn" class="danger" type="button">
-            מחק צ'אט
+          <button id="closeSidebarBtn" class="close-sidebar-btn hidden">
+            ✕
           </button>
-          <select id="chatSelect" title="בחר צ'אט"></select>
         </div>
-      </div>
 
-      <div class="grid">
-        <div class="panel">
-          <div class="panel-title">צ'אט</div>
-          <div id="chat" class="chat"></div>
+        <div class="sidebar-section">
+          <div class="section-title">הצ'אטים שלי</div>
+          <button id="newChatBtn" class="action-btn primary-btn">
+            + צ'אט חדש
+          </button>
+          <div id="chatList" class="scrollable-list"></div>
+        </div>
 
-          <form id="form" class="bar">
+        <div class="sidebar-section">
+          <div class="section-title row">
+            <span>הכלים שלי (MCP)</span>
+            <button id="openMcpModalBtn" class="icon-btn" title="הוסף כלי">
+              ➕
+            </button>
+          </div>
+          <div id="mcpList" class="scrollable-list"></div>
+        </div>
+      </aside>
+
+      <main class="main-chat">
+        <div class="chat-header">
+          <h3 id="currentChatTitle">צ'אט חדש</h3>
+          <button id="deleteChatBtn" class="danger-btn">מחק צ'אט</button>
+        </div>
+
+        <div id="chat" class="chat-area"></div>
+
+        <div class="input-area">
+          <form id="form" class="chat-form">
             <input
               id="input"
-              placeholder="כתוב הודעה... (למשל: מה מזג האוויר בחיפה?)"
+              placeholder="כתוב הודעה כאן..."
               autocomplete="off"
             />
             <button id="send" type="submit">שלח</button>
           </form>
-
-          <div class="hint">
-            טיפ: המודל יחפש אוטומטית כלים בשרתי ה-MCP המחוברים ויפעיל אותם במידת
-            הצורך.
+          <div class="footer-hint">
+            המודל מזהה ויפעיל אוטומטית את הכלים שחיברת.
           </div>
         </div>
-
-        <div class="panel">
-          <div class="panel-title row">
-            <span>MCPs מחוברים</span>
-            <button id="openMcpModalBtn" class="ghost" type="button">
-              צרף MCP
-            </button>
-          </div>
-
-          <div id="mcpStats" class="stats">Servers: 0</div>
-          <div id="mcpList" class="mcp-list"></div>
-
-          <div class="hint">
-            השרת מתחבר ל-MCP באמצעות SSE. וודא ששרת ה-MCP שלך פתוח לאינטרנט.
-          </div>
-        </div>
-      </div>
+      </main>
     </div>
 
     <div id="modalOverlay" class="modal-overlay hidden">
       <div class="modal">
         <div class="modal-head">
-          <div>
-            <div class="modal-title">צרף MCP</div>
-            <div class="modal-sub">
-              הוסף שרת MCP מרוחק (Render/Vercel) או מקומי
-            </div>
-          </div>
-          <button id="closeModalBtn" class="xbtn" type="button">✕</button>
+          <h3>הוספת כלי חדש (MCP)</h3>
+          <button id="closeModalBtn" class="icon-btn">✕</button>
         </div>
-
-        <div class="tabs">
-          <button class="tab active" data-tab="http">Render URL (SSE)</button>
-          <button class="tab" data-tab="stdio">Local MCP (stdio)</button>
+        <div class="field">
+          <label>מזהה כלי (אנגלית, ללא רווחים)</label>
+          <input id="httpId" placeholder="e.g. gmail-service" />
         </div>
-
-        <div class="tabpanes">
-          <div class="pane" data-pane="http">
-            <div class="field">
-              <label>ID (למשל: weather-server)</label>
-              <input id="httpId" placeholder="weather" />
-            </div>
-            <div class="field">
-              <label>Label (שם לתצוגה)</label>
-              <input id="httpLabel" placeholder="Weather Service" />
-            </div>
-            <div class="field">
-              <label>URL (למשל: https://my-app.onrender.com)</label>
-              <input
-                id="httpUrl"
-                placeholder="https://render-uplaude-mcp.onrender.com"
-              />
-            </div>
-
-            <div class="actions">
-              <button id="addHttpBtn" type="button">צרף MCP</button>
-              <button id="cancelBtn1" class="ghost" type="button">ביטול</button>
-            </div>
-
-            <div class="hint">
-              המערכת תוסיף אוטומטית <code>/sse</code> לכתובת אם לא תציין נתיב
-              אחר.
-            </div>
-
-            <div id="httpStatus" class="status"></div>
-          </div>
-
-          <div class="pane hidden" data-pane="stdio">
-            <div class="field">
-              <label>ID</label>
-              <input id="localId" placeholder="local-files" />
-            </div>
-            <div class="field">
-              <label>Label</label>
-              <input id="localLabel" placeholder="Local Filesystem" />
-            </div>
-            <div class="field">
-              <label>Command</label>
-              <input id="localCmd" placeholder="npx" />
-            </div>
-            <div class="field">
-              <label>Args (מופרד בפסיקים)</label>
-              <input
-                id="localArgs"
-                placeholder="-y, @modelcontextprotocol/server-filesystem, /Users/me/Desktop"
-              />
-            </div>
-
-            <div class="actions">
-              <button id="addLocalBtn" type="button">צרף MCP מקומי</button>
-              <button id="cancelBtn2" class="ghost" type="button">ביטול</button>
-            </div>
-
-            <div class="hint">
-              MCP מקומי (stdio) רלוונטי רק אם אתה מריץ את הצ'אט הזה לוקאלית על
-              המחשב שלך.
-            </div>
-
-            <div id="localStatus" class="status"></div>
-          </div>
+        <div class="field">
+          <label>שם לתצוגה</label>
+          <input id="httpLabel" placeholder="My Gmail" />
         </div>
+        <div class="field">
+          <label>כתובת השרת (URL)</label>
+          <input id="httpUrl" placeholder="https://my-server.onrender.com" />
+        </div>
+        <div class="actions">
+          <button id="addHttpBtn" class="primary-btn">הוסף כלי</button>
+          <button id="cancelBtn1" class="ghost-btn">ביטול</button>
+        </div>
+        <div id="httpStatus" class="status"></div>
       </div>
     </div>
 

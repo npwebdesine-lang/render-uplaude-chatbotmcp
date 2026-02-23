@@ -7,7 +7,7 @@ global.EventSource = EventSource;
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import { listMcps, addHttpMcp, addLocalMcp, removeMcp } from "./mcp/manager.js";
+import { listMcps, addHttpMcp, removeMcp } from "./mcp/manager.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -19,7 +19,6 @@ app.use(express.static(path.join(__dirname, "public")));
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const chats = new Map();
 
-// מודל 3.5 הוא הכי צייתן מבחינת קריאה לכלים
 const MODEL_NAME = "gpt-4o";
 
 const SYSTEM_PROMPT = `
@@ -33,12 +32,17 @@ function log(msg) {
   console.log(`[Chatbot] ${msg}`);
 }
 
-// פונקציית עזר לניקוי שמות (למנוע אי התאמות)
+/**
+ * מנקה שמות של כלים (מוחק קווים תחתונים ורווחים) כדי למנוע בלבול של ה-AI
+ */
 function normalizeName(name) {
   return name.toLowerCase().replace(/_/g, "").replace(/-/g, "");
 }
 
-// פונקציית חיבור יציבה
+/**
+ * פונקציה חכמה שמתחברת לשרת ה-MCP המרוחק עם מגבלת זמן (Timeout)
+ * כדי למנוע תקיעות אם השרת המרוחק נפל.
+ */
 async function connectToMcpSafe(mcpConfig) {
   if (mcpConfig.type !== "http") return null;
 
@@ -55,14 +59,11 @@ async function connectToMcpSafe(mcpConfig) {
       setTimeout(() => reject(new Error("Timeout (60s)")), 60000),
     );
 
+    // ממתינים עד שהשרת יתחבר או עד שיעברו 60 שניות
     await Promise.race([connectPromise, timeoutPromise]);
 
     const toolsResult = await mcpClient.listTools();
     const tools = toolsResult.tools || [];
-
-    log(
-      `✅ Connected to ${mcpConfig.id}. Found tools: ${tools.map((t) => t.name).join(", ")}`,
-    );
     return { client: mcpClient, tools: tools, id: mcpConfig.id };
   } catch (err) {
     log(`❌ Connection failed to ${mcpConfig.id}: ${err.message}`);
@@ -70,6 +71,9 @@ async function connectToMcpSafe(mcpConfig) {
   }
 }
 
+/**
+ * מנהל את היסטוריית הצ'אט בזיכרון השרת
+ */
 function getOrCreateChat(chatId) {
   if (!chats.has(chatId)) {
     chats.set(chatId, [{ role: "system", content: SYSTEM_PROMPT }]);
@@ -77,8 +81,14 @@ function getOrCreateChat(chatId) {
   return chats.get(chatId);
 }
 
+// --- ה-API של הצ'אט ---
 app.post("/api/chat", async (req, res) => {
   try {
+    // משיכת זיהוי המשתמש מה-Headers (נשלח מהדפדפן)
+    const userId = req.headers["x-user-id"];
+    if (!userId)
+      return res.status(401).json({ error: "Unauthorized: Missing User ID" });
+
     const { chatId, message } = req.body;
     if (!chatId || !message)
       return res.status(400).json({ error: "Missing data" });
@@ -86,11 +96,12 @@ app.post("/api/chat", async (req, res) => {
     const history = getOrCreateChat(chatId);
     history.push({ role: "user", content: message });
 
-    // 1. חיבור ל-MCP
-    const mcpConfigs = listMcps();
+    // מביאים רק את הכלים של המשתמש הספציפי הזה!
+    const mcpConfigs = listMcps(userId);
     const allTools = [];
     const clientMap = new Map();
 
+    // התחברות לכל השרתים במקביל
     const connections = await Promise.all(
       mcpConfigs.map((c) => connectToMcpSafe(c)),
     );
@@ -109,15 +120,12 @@ app.post("/api/chat", async (req, res) => {
               },
             },
           });
-          // שומרים את הקליינט במפה
           clientMap.set(tool.name, conn.client);
         }
       }
     }
 
-    log(`Available tools in map: ${Array.from(clientMap.keys()).join(", ")}`);
-
-    // 2. קריאה ל-OpenAI
+    // קריאה למודל ה-AI
     let response = await client.chat.completions.create({
       model: MODEL_NAME,
       messages: history,
@@ -128,7 +136,7 @@ app.post("/api/chat", async (req, res) => {
     let msg = response.choices[0].message;
     const usedToolsLog = [];
 
-    // 3. ביצוע כלים (עם מנגנון Fuzzy Match)
+    // טיפול בכלים (Tool Calling) עם Fuzzy Match
     if (msg.tool_calls) {
       history.push(msg);
 
@@ -137,60 +145,41 @@ app.post("/api/chat", async (req, res) => {
         const args = JSON.parse(toolCall.function.arguments);
         usedToolsLog.push({ name: requestedName, args });
 
-        log(`OpenAI requested: '${requestedName}'`);
-
-        // --- כאן התיקון הגדול: חיפוש גמיש ---
         let mcpClient = clientMap.get(requestedName);
         let realToolName = requestedName;
 
-        // אם לא מצאנו התאמה מדוייקת, נחפש בערך
+        // חיפוש גמיש אם ה-AI עשה שגיאת כתיב קלה בשם הכלי
         if (!mcpClient) {
-          log(
-            `⚠️ Exact match not found for '${requestedName}'. Trying fuzzy search...`,
-          );
           const normalizedReq = normalizeName(requestedName);
-
           for (const [key, client] of clientMap.entries()) {
             if (normalizeName(key) === normalizedReq) {
               mcpClient = client;
               realToolName = key;
-              log(
-                `✅ Fuzzy match found! '${requestedName}' mapped to '${realToolName}'`,
-              );
               break;
             }
           }
         }
 
         let content = "";
-
         if (!mcpClient) {
-          content = `Error: Tool '${requestedName}' not found. Available: ${Array.from(clientMap.keys()).join(", ")}`;
-          log(`❌ FATAL: Could not find client for tool.`);
+          content = `Error: Tool '${requestedName}' not found.`;
         } else {
           try {
-            log(`🚀 Executing '${realToolName}'...`);
-            // אנחנו קוראים לפונקציה בשם האמיתי שלה בשרת (realToolName)
             const result = await mcpClient.callTool({
               name: realToolName,
               arguments: args,
             });
-
             content = result.content
               ? result.content.map((c) => c.text).join("\n")
               : JSON.stringify(result);
-
-            log(`✅ Tool output: ${content}`);
           } catch (e) {
             content = `Tool Error: ${e.message}`;
-            log(`❌ Execution failed: ${e.message}`);
           }
         }
-
         history.push({ role: "tool", tool_call_id: toolCall.id, content });
       }
 
-      // קריאה חוזרת עם התשובות
+      // קריאה חוזרת עם התשובה מהכלי
       response = await client.chat.completions.create({
         model: MODEL_NAME,
         messages: history,
@@ -209,26 +198,32 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// APIs & KeepAlive
-app.get("/api/mcps", (req, res) => res.json({ servers: listMcps() }));
-app.post("/api/mcps/http", (req, res) => {
-  res.json({ ok: true, added: addHttpMcp(req.body) });
+// --- ניהול MCPs מבוסס משתמשים ---
+app.get("/api/mcps", (req, res) => {
+  const userId = req.headers["x-user-id"];
+  res.json({ servers: listMcps(userId) });
 });
+
+app.post("/api/mcps/http", (req, res) => {
+  const userId = req.headers["x-user-id"];
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  res.json({ ok: true, added: addHttpMcp(userId, req.body) });
+});
+
 app.delete("/api/mcps/:id", (req, res) => {
-  removeMcp(req.params.id);
+  const userId = req.headers["x-user-id"];
+  removeMcp(userId, req.params.id);
   res.json({ ok: true });
 });
+
 app.delete("/api/chat/:chatId", (req, res) => {
   chats.delete(req.params.chatId);
   res.json({ ok: true });
 });
+
 app.get("/healthz", (req, res) => res.send("OK"));
 
 const port = process.env.PORT || 3000;
 app.listen(port, "0.0.0.0", () => {
   console.log(`Chatbot listening on port ${port}`);
-  const myUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`;
-  setInterval(() => {
-    fetch(`${myUrl}/healthz`).catch(() => {});
-  }, 300000);
 });
