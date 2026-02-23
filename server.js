@@ -52,7 +52,7 @@ async function connectToMcpSafe(mcpConfig) {
 
     const connectPromise = mcpClient.connect(transport);
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Timeout (15s)")), 15000),
+      setTimeout(() => reject(new Error("Timeout (60s)")), 60000),
     );
 
     await Promise.race([connectPromise, timeoutPromise]);
