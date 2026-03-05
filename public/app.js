@@ -114,8 +114,9 @@ function addBubble(text, who = "me", toolsUsed = []) {
           const fileContent = codeBlock.innerText;
 
           // אריזת הטקסט לקובץ וירטואלי בזיכרון ה-RAM
-          const blob = new Blob([fileContent], {
-            type: "text/plain;charset=utf-8",
+          // הוספנו את התו הנסתר \uFEFF כדי שאקסל יקרא עברית בלי ג'יבריש
+          const blob = new Blob(["\ufeff", fileContent], {
+            type: "text/csv;charset=utf-8",
           });
           const url = URL.createObjectURL(blob);
 
