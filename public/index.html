@@ -8,6 +8,7 @@
     />
     <title>AI Workspace</title>
     <link rel="stylesheet" href="style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   </head>
   <body>
     <button id="mobileMenuBtn" class="mobile-menu-btn">☰</button>
@@ -53,11 +54,12 @@
 
         <div class="input-area">
           <form id="form" class="chat-form">
-            <input
+            <textarea
               id="input"
-              placeholder="כתוב הודעה כאן..."
+              placeholder="כתוב הודעה כאן... (Shift + Enter לשורה חדשה)"
               autocomplete="off"
-            />
+              rows="1"
+            ></textarea>
             <button id="send" type="submit">שלח</button>
           </form>
           <div class="footer-hint">

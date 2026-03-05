@@ -3,7 +3,6 @@
  * לוגיקת צד לקוח - כולל תמיכה בהפרדת משתמשים (Multi-Tenancy)
  */
 
-// --- מנגנון תעודת זהות וירטואלית ---
 function getUserId() {
   let uid = localStorage.getItem("chatbot_multi_tenant_uid");
   if (!uid) {
@@ -13,13 +12,11 @@ function getUserId() {
   return uid;
 }
 
-// כותרות קבועות לכל פנייה לשרת
 const apiHeaders = {
   "Content-Type": "application/json",
-  "X-User-ID": getUserId(), // תעודת הזהות שלנו!
+  "X-User-ID": getUserId(),
 };
 
-// --- אלמנטים מה-DOM ---
 const chatEl = document.getElementById("chat");
 const form = document.getElementById("form");
 const input = document.getElementById("input");
@@ -33,18 +30,15 @@ const openMcpModalBtn = document.getElementById("openMcpModalBtn");
 const modalOverlay = document.getElementById("modalOverlay");
 const closeModalBtn = document.getElementById("closeModalBtn");
 const cancelBtn1 = document.getElementById("cancelBtn1");
-
 const httpId = document.getElementById("httpId");
 const httpLabel = document.getElementById("httpLabel");
 const httpUrl = document.getElementById("httpUrl");
 const addHttpBtn = document.getElementById("addHttpBtn");
 const httpStatus = document.getElementById("httpStatus");
-
 const mobileMenuBtn = document.getElementById("mobileMenuBtn");
 const sidebar = document.getElementById("sidebar");
 const closeSidebarBtn = document.getElementById("closeSidebarBtn");
 
-// --- ניהול סטייט (State) מקומי ---
 const STORAGE_KEY = `mcp_chats_${getUserId()}`;
 let state = loadState();
 
@@ -71,6 +65,7 @@ function loadState() {
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
+
 function getActiveChat() {
   return state.chats[state.activeChatId];
 }
@@ -81,7 +76,17 @@ function addBubble(text, who = "me", toolsUsed = []) {
   div.className = `bubble ${who}`;
 
   const contentDiv = document.createElement("div");
-  contentDiv.textContent = text;
+
+  if (who === "bot") {
+    // אם הבוט עונה - נתרגם את הטקסט שלו ל-Markdown (טבלאות, לינקים וכו')
+    contentDiv.className = "markdown-content";
+    contentDiv.innerHTML = marked.parse(text);
+  } else {
+    // אם המשתמש שואל - נציג כטקסט רגיל אבל נשמור על ירידות השורה שלו
+    contentDiv.textContent = text;
+    contentDiv.style.whiteSpace = "pre-wrap";
+  }
+
   div.appendChild(contentDiv);
 
   if (toolsUsed && toolsUsed.length > 0) {
@@ -121,7 +126,7 @@ function renderChatSidebarList() {
         saveState();
         renderChatSidebarList();
         renderActiveChat();
-        if (window.innerWidth <= 768) sidebar.classList.remove("open"); // סגירת תפריט במובייל
+        if (window.innerWidth <= 768) sidebar.classList.remove("open");
       };
       chatListEl.appendChild(btn);
     });
@@ -169,7 +174,21 @@ deleteChatBtn.addEventListener("click", async () => {
   renderActiveChat();
 });
 
-// שליחת הודעה
+// --- שליטה על תיבת ההקלדה והוספת יכולת שימוש ב- Shift+Enter ---
+input.addEventListener("input", function () {
+  this.style.height = "auto";
+  this.style.height =
+    (this.scrollHeight < 150 ? this.scrollHeight : 150) + "px";
+});
+
+input.addEventListener("keydown", function (event) {
+  // אם נלחץ אנטר ללא שיפט
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault(); // תעצור ירידת שורה
+    sendBtn.click(); // תשגר את הפורם
+  }
+});
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const msg = input.value.trim();
@@ -185,6 +204,7 @@ form.addEventListener("submit", async (e) => {
   addBubble(msg, "me");
 
   input.value = "";
+  input.style.height = "auto"; // איפוס גובה תיבת הטקסט
   sendBtn.disabled = true;
 
   const loadingId = "loader";
@@ -310,13 +330,11 @@ function escapeHtml(str) {
     .replaceAll(">", "&gt;");
 }
 
-// מובייל Menu Toggle
 mobileMenuBtn.addEventListener("click", () => sidebar.classList.add("open"));
 closeSidebarBtn.addEventListener("click", () =>
   sidebar.classList.remove("open"),
 );
 
-// אתחול
 renderChatSidebarList();
 renderActiveChat();
 refreshMcps();
