@@ -1,6 +1,7 @@
 /**
  * public/app.js
  * לוגיקת צד לקוח - כולל תמיכה בהפרדת משתמשים (Multi-Tenancy)
+ * וכולל מנוע חכם להמרת קוד לקבצים להורדה (Blob Magic)
  */
 
 function getUserId() {
@@ -70,7 +71,7 @@ function getActiveChat() {
   return state.chats[state.activeChatId];
 }
 
-// --- ניהול ה-UI של הצ'אט ---
+// --- ניהול ה-UI של הצ'אט ויצירת קבצים להורדה (Blob Magic) ---
 function addBubble(text, who = "me", toolsUsed = []) {
   const div = document.createElement("div");
   div.className = `bubble ${who}`;
@@ -78,9 +79,62 @@ function addBubble(text, who = "me", toolsUsed = []) {
   const contentDiv = document.createElement("div");
 
   if (who === "bot") {
-    // אם הבוט עונה - נתרגם את הטקסט שלו ל-Markdown (טבלאות, לינקים וכו')
+    // 1. תרגום הטקסט של ה-AI ל-Markdown (טבלאות, קוד, לינקים וכו')
     contentDiv.className = "markdown-content";
     contentDiv.innerHTML = marked.parse(text);
+
+    // 2. מנוע יצירת הקבצים (Blob Magic)!
+    // מחפשים כל אזור שה-AI כתב בו קוד או נתונים
+    const preBlocks = contentDiv.querySelectorAll("pre");
+    preBlocks.forEach((pre) => {
+      const codeBlock = pre.querySelector("code");
+      if (codeBlock) {
+        // מנסים להבין איזה סוג קובץ ה-AI רצה לייצר (csv, html, python וכו')
+        let extension = "txt"; // ברירת מחדל
+        const langClass = Array.from(codeBlock.classList).find((c) =>
+          c.startsWith("language-"),
+        );
+        if (langClass) {
+          extension = langClass.replace("language-", ""); // שולף את הסיומת
+        }
+
+        // יצירת כפתור הורדה מעוצב
+        const btnDiv = document.createElement("div");
+        btnDiv.style.marginTop = "10px";
+        btnDiv.style.textAlign = "left"; // אנגלית מיושרת לשמאל
+
+        const downloadBtn = document.createElement("button");
+        downloadBtn.className = "primary-btn";
+        downloadBtn.style.fontSize = "12px";
+        downloadBtn.style.padding = "5px 12px";
+        downloadBtn.innerHTML = `⬇️ לחץ להורדה כקובץ (.${extension})`;
+
+        // מה קורה כשלוחצים על הכפתור? הדפדפן מייצר קובץ מיד!
+        downloadBtn.onclick = () => {
+          const fileContent = codeBlock.innerText;
+
+          // אריזת הטקסט לקובץ וירטואלי בזיכרון ה-RAM
+          const blob = new Blob([fileContent], {
+            type: "text/plain;charset=utf-8",
+          });
+          const url = URL.createObjectURL(blob);
+
+          // "לחיצה" נסתרת על קישור כדי להתחיל הורדה למחשב
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `AI_Generated_${Date.now()}.${extension}`;
+          document.body.appendChild(a);
+          a.click();
+
+          // ניקוי זיכרון הדפדפן
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        };
+
+        btnDiv.appendChild(downloadBtn);
+        pre.appendChild(btnDiv); // הוספת הכפתור מתחת לבלוק התוכן
+      }
+    });
   } else {
     // אם המשתמש שואל - נציג כטקסט רגיל אבל נשמור על ירידות השורה שלו
     contentDiv.textContent = text;
