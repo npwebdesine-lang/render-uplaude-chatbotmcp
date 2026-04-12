@@ -537,6 +537,43 @@ body {
 }
 .mcp-type-badge.http  { background: #1e3a5f; color: #90cdf4; }
 .mcp-type-badge.stdio { background: #2d3a1e; color: #86efac; }
+.mcp-type-badge.local { background: #3a2a1e; color: #fbbf24; }
+
+/* ─── Local MCP Panel ───────────────────────────────────────────────────── */
+.local-mcp-command {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+  margin-top: 2px;
+}
+.local-tunnel-url {
+  font-size: 10px;
+  color: #86efac;
+  font-family: monospace;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+.tunnel-btn {
+  font-size: 11px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: #2d3a1e;
+  color: #86efac;
+  border: 1px solid #86efac44;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.tunnel-btn:hover { background: #3a4f26; }
+.mcp-status-text.offline { color: var(--text-muted); }
+.local-mcp-card .mcp-actions { flex-wrap: wrap; gap: 4px; }
 
 /* ─── Status field in modal ─────────────────────────────────────────────── */
 .status        { font-size: 13px; margin-top: 10px; min-height: 20px; }

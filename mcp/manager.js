@@ -52,6 +52,41 @@ export function removeMcp(userId, mcpId) {
 }
 
 /**
+ * מוסיפה שרת MCP מקומי עם tunnel — config נשמר, tunnelUrl מוגדר לאחר מכן
+ */
+export function addLocalMcp(userId, { id, label, command, args = [] }) {
+  if (!userId || !id || !label || !command) throw new Error("Missing fields");
+  const parsedArgs = Array.isArray(args)
+    ? args
+    : String(args).split(/\s+/).filter(Boolean);
+  const obj = {
+    id,
+    label,
+    type: "local",
+    command: command.trim(),
+    args: parsedArgs,
+    tunnelUrl: null,
+    addedAt: Date.now(),
+  };
+  const mcps = userMcps.get(userId) || [];
+  mcps.push(obj);
+  userMcps.set(userId, mcps);
+  return obj;
+}
+
+/**
+ * מעדכנת את ה-tunnel URL של שרת מקומי
+ */
+export function setLocalMcpTunnel(userId, mcpId, tunnelUrl) {
+  const mcps = userMcps.get(userId) || [];
+  const mcp = mcps.find((m) => m.id === mcpId);
+  if (!mcp) throw new Error("MCP not found");
+  mcp.tunnelUrl = tunnelUrl ? String(tunnelUrl).trim() : null;
+  userMcps.set(userId, mcps);
+  return mcp;
+}
+
+/**
  * מוסיפה שרת STDIO מקומי — מריץ פקודה כתהליך-ילד
  */
 export function addStdioMcp(userId, { id, label, command, args = [] }) {

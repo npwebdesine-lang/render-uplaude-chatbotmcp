@@ -586,6 +586,8 @@ function getMcpStatusHtml(id) {
     return `<span class="mcp-dot mcp-ready" title="מוכן לשימוש">●</span>`;
   if (s === "error")
     return `<span class="mcp-dot mcp-error" title="שגיאת חיבור">●</span>`;
+  if (s === "offline")
+    return `<span class="mcp-dot mcp-unknown" title="ממתין לחיבור tunnel">○</span>`;
   return `<span class="mcp-dot mcp-unknown" title="לא נבדק">○</span>`;
 }
 
@@ -609,27 +611,37 @@ async function pingMcp(mcpId) {
   }
 
   renderMcpList(lastMcpServers);
+  renderLocalMcpList(lastMcpServers);
 
-  // ✨ הבהוב נקודת הסטטוס אחרי שינוי
+  // ✨ הבהוב נקודת הסטטוס אחרי שינוי (HTTP/STDIO)
   requestAnimationFrame(() => {
     const dotEl = mcpList
       .querySelector(`[data-ping="${CSS.escape(mcpId)}"]`)
       ?.closest(".mcp-card")
       ?.querySelector(".mcp-dot");
     if (dotEl) anim.mcpDotFlash(dotEl);
+
+    // local panel
+    const localDotEl = localMcpList
+      .querySelector(`[data-ping="${CSS.escape(mcpId)}"]`)
+      ?.closest(".mcp-card")
+      ?.querySelector(".mcp-dot");
+    if (localDotEl) anim.mcpDotFlash(localDotEl);
   });
 }
 
 function renderMcpList(servers) {
   lastMcpServers = servers;
+  // מציג רק HTTP ו-STDIO — local מוצג בפאנל הנפרד
+  const remoteServers = servers.filter(s => s.type !== "local");
   mcpList.innerHTML = "";
 
-  if (!servers.length) {
+  if (!remoteServers.length) {
     mcpList.innerHTML = `<div style="font-size:12px; color:gray; padding:5px;">אין כלים מחוברים.</div>`;
     return;
   }
 
-  servers.forEach((s, index) => {
+  remoteServers.forEach((s, index) => {
     const status = mcpStatusMap.get(s.id) || "unknown";
     const toolCount = mcpStatusMap.get(`${s.id}_tools`);
 
@@ -697,7 +709,15 @@ async function refreshMcps() {
     const data = await r.json();
     const servers = data.servers || [];
     renderMcpList(servers);
-    for (const s of servers) {
+    renderLocalMcpList(servers);
+    // auto-ping רק ל-HTTP/STDIO שלא נבדקו
+    for (const s of servers.filter(s => s.type !== "local")) {
+      if (!mcpStatusMap.has(s.id) || mcpStatusMap.get(s.id) === "unknown") {
+        pingMcp(s.id);
+      }
+    }
+    // auto-ping ל-local שיש להם tunnelUrl
+    for (const s of servers.filter(s => s.type === "local" && s.tunnelUrl)) {
       if (!mcpStatusMap.has(s.id) || mcpStatusMap.get(s.id) === "unknown") {
         pingMcp(s.id);
       }
@@ -852,6 +872,184 @@ addHttpBtn.addEventListener("click", async () => {
     }
   }
 });
+
+// ─── Local MCP Panel ─────────────────────────────────────────────────────────
+const localMcpList = document.getElementById("localMcpList");
+const openLocalMcpModalBtn = document.getElementById("openLocalMcpModalBtn");
+const localMcpModal = document.getElementById("localMcpModal");
+const localMcpModalCard = localMcpModal.querySelector(".modal");
+const closeLocalModalBtn = document.getElementById("closeLocalModalBtn");
+const cancelLocalBtn = document.getElementById("cancelLocalBtn");
+const addLocalMcpBtn = document.getElementById("addLocalMcpBtn");
+const localId = document.getElementById("localId");
+const localLabel = document.getElementById("localLabel");
+const localCommand = document.getElementById("localCommand");
+const localMcpStatus = document.getElementById("localMcpStatus");
+
+function openLocalModal() {
+  localId.value = "";
+  localLabel.value = "";
+  localCommand.value = "";
+  localMcpStatus.textContent = "";
+  localMcpStatus.className = "status";
+  localMcpModal.classList.remove("hidden");
+  anim.modalOpen(localMcpModal, localMcpModalCard); // ✨
+}
+
+function closeLocalModal() {
+  anim.modalClose(localMcpModal, localMcpModalCard, () => {
+    localMcpModal.classList.add("hidden");
+    gsap.set([localMcpModal, localMcpModalCard], { clearProps: "all" });
+  });
+}
+
+openLocalMcpModalBtn.addEventListener("click", openLocalModal);
+closeLocalModalBtn.addEventListener("click", closeLocalModal);
+cancelLocalBtn.addEventListener("click", closeLocalModal);
+
+addLocalMcpBtn.addEventListener("click", async () => {
+  const id = localId.value.trim();
+  const label = localLabel.value.trim();
+  const command = localCommand.value.trim();
+
+  if (!id || !label || !command) {
+    localMcpStatus.textContent = "❌ יש למלא את כל השדות";
+    localMcpStatus.className = "status error";
+    gsap.fromTo(localMcpModalCard, { x: -6 }, { x: 0, duration: 0.4, ease: "elastic.out(3, 0.3)" });
+    return;
+  }
+
+  try {
+    localMcpStatus.textContent = "שומר...";
+    addLocalMcpBtn.disabled = true;
+    const r = await fetch("/api/mcps/local", {
+      method: "POST",
+      headers: apiHeaders,
+      body: JSON.stringify({ id, label, command }),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "שגיאה");
+    await refreshMcps();
+    closeLocalModal();
+    addLocalMcpBtn.disabled = false;
+  } catch (e) {
+    localMcpStatus.textContent = "❌ שגיאה: " + e.message;
+    localMcpStatus.className = "status error";
+    gsap.fromTo(localMcpModalCard, { x: -6 }, { x: 0, duration: 0.4, ease: "elastic.out(3, 0.3)" });
+    addLocalMcpBtn.disabled = false;
+  }
+});
+
+/**
+ * מעדכן את ה-tunnel URL דרך prompt פשוט
+ */
+async function setTunnelUrl(mcpId) {
+  const url = prompt("הכנס את כתובת ה-tunnel (ngrok / cloudflare):");
+  if (!url?.trim()) return;
+
+  try {
+    const r = await fetch(`/api/mcps/local/${encodeURIComponent(mcpId)}/tunnel`, {
+      method: "PATCH",
+      headers: apiHeaders,
+      body: JSON.stringify({ tunnelUrl: url.trim() }),
+    });
+    if (!r.ok) throw new Error("שגיאה בשמירת ה-URL");
+    await refreshMcps();
+    // ping אוטומטי אחרי עדכון URL
+    mcpStatusMap.set(mcpId, "loading");
+    renderLocalMcpList(lastMcpServers);
+    pingMcp(mcpId);
+  } catch (e) {
+    alert("שגיאה: " + e.message);
+  }
+}
+
+/**
+ * מרנדר את פאנל ה-MCP המקומי
+ */
+function renderLocalMcpList(servers) {
+  const localServers = (servers || []).filter(s => s.type === "local");
+  localMcpList.innerHTML = "";
+
+  if (!localServers.length) {
+    localMcpList.innerHTML = `<div style="font-size:12px; color:gray; padding:5px;">לחץ ➕ להוסיף MCP מקומי.</div>`;
+    return;
+  }
+
+  localServers.forEach((s, index) => {
+    const status = mcpStatusMap.get(s.id) || (s.tunnelUrl ? "unknown" : "offline");
+    const toolCount = mcpStatusMap.get(`${s.id}_tools`);
+
+    let statusLabel = "";
+    if (status === "offline")    statusLabel = "ממתין לחיבור";
+    else if (status === "loading") statusLabel = "מתחבר...";
+    else if (status === "ready")   statusLabel = toolCount !== undefined ? `${toolCount} כלים` : "מוכן";
+    else if (status === "error")   statusLabel = "שגיאת חיבור";
+
+    const tunnelDisplay = s.tunnelUrl
+      ? `<div class="local-tunnel-url" title="${escapeHtml(s.tunnelUrl)}">${escapeHtml(s.tunnelUrl.replace(/^https?:\/\//, "").substring(0, 28))}…</div>`
+      : "";
+
+    const tunnelBtn = !s.tunnelUrl
+      ? `<button class="tunnel-btn" data-tunnel="${escapeHtml(s.id)}">🔗 חבר Tunnel</button>`
+      : `<button class="tunnel-btn" data-tunnel="${escapeHtml(s.id)}" title="שנה URL">✏️</button>`;
+
+    const div = document.createElement("div");
+    div.className = "list-item mcp-card local-mcp-card";
+    div.innerHTML = `
+      <div class="mcp-info">
+        <div class="mcp-label">
+          <span class="mcp-type-badge local">LOCAL</span>${escapeHtml(s.label)}
+        </div>
+        <div class="local-mcp-command">${escapeHtml(s.command)}</div>
+        ${tunnelDisplay}
+        <div class="mcp-meta">
+          ${getMcpStatusHtml(s.id)}
+          <span class="mcp-status-text ${status}">${escapeHtml(statusLabel)}</span>
+        </div>
+      </div>
+      <div class="mcp-actions">
+        ${tunnelBtn}
+        ${s.tunnelUrl ? `<button class="icon-btn" data-ping="${escapeHtml(s.id)}" title="בדוק חיבור">🔄</button>` : ""}
+        <button class="icon-btn danger-text" data-del="${escapeHtml(s.id)}" title="הסר">🗑️</button>
+      </div>
+    `;
+    localMcpList.appendChild(div);
+    anim.mcpCardIn(div, index); // ✨
+  });
+
+  // tunnel button
+  localMcpList.querySelectorAll("[data-tunnel]").forEach(btn => {
+    btn.addEventListener("click", () => setTunnelUrl(btn.getAttribute("data-tunnel")));
+  });
+
+  // ping button
+  localMcpList.querySelectorAll("[data-ping]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      anim.sendPop(btn);
+      pingMcp(btn.getAttribute("data-ping"));
+    });
+  });
+
+  // delete button
+  localMcpList.querySelectorAll("[data-del]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-del");
+      if (!confirm("למחוק את ה-MCP המקומי הזה?")) return;
+      const card = btn.closest(".mcp-card");
+      gsap.to(card, {
+        opacity: 0, x: 30, duration: 0.22, ease: "power2.in",
+        onComplete: async () => {
+          await fetch(`/api/mcps/${encodeURIComponent(id)}`, {
+            method: "DELETE", headers: apiHeaders,
+          });
+          mcpStatusMap.delete(id);
+          mcpStatusMap.delete(`${id}_tools`);
+          await refreshMcps();
+        }
+      });
+    });
+  });
+}
 
 // ─── Mobile Sidebar ───────────────────────────────────────────────────────────
 mobileMenuBtn.addEventListener("click", () => anim.sidebarOpen(sidebar));  // ✨

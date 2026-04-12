@@ -8,7 +8,7 @@ global.EventSource = EventSource;
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { listMcps, addHttpMcp, addStdioMcp, removeMcp } from "./mcp/manager.js";
+import { listMcps, addHttpMcp, addStdioMcp, addLocalMcp, setLocalMcpTunnel, removeMcp } from "./mcp/manager.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -75,6 +75,10 @@ async function connectToMcp(mcpConfig) {
       command: mcpConfig.command,
       args: mcpConfig.args || [],
     });
+  } else if (mcpConfig.type === "local") {
+    if (!mcpConfig.tunnelUrl) return null; // אין tunnel URL עדיין
+    log(`Connecting (local/tunnel) to ${mcpConfig.tunnelUrl}...`);
+    transport = new SSEClientTransport(new URL(mcpConfig.tunnelUrl));
   } else {
     return null;
   }
@@ -348,6 +352,30 @@ app.delete("/api/mcps/:id", (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── MCP Local (bridge + tunnel) endpoints ───────────────────────────────────
+app.post("/api/mcps/local", (req, res) => {
+  const userId = req.headers["x-user-id"];
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    res.json({ ok: true, added: addLocalMcp(userId, req.body) });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.patch("/api/mcps/local/:id/tunnel", (req, res) => {
+  const userId = req.headers["x-user-id"];
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const old = getUserCache(userId).get(req.params.id);
+    if (old?.transport) old.transport.close().catch(() => {});
+    getUserCache(userId).delete(req.params.id);
+    res.json({ ok: true, updated: setLocalMcpTunnel(userId, req.params.id, req.body.tunnelUrl) });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 // ─── MCP STDIO endpoint ──────────────────────────────────────────────────────
 app.post("/api/mcps/stdio", (req, res) => {
   const userId = req.headers["x-user-id"];
@@ -368,6 +396,11 @@ app.get("/api/mcps/:id/ping", async (req, res) => {
   const configs = listMcps(userId);
   const config = configs.find((m) => m.id === mcpId);
   if (!config) return res.status(404).json({ error: "MCP not found" });
+
+  // local MCP ללא tunnel URL — offline, לא שגיאה
+  if (config.type === "local" && !config.tunnelUrl) {
+    return res.json({ status: "offline" });
+  }
 
   // הרג תהליך STDIO ישן ואלץ חיבור מחדש
   const oldEntry = getUserCache(userId).get(mcpId);
