@@ -499,6 +499,45 @@ body {
   flex-shrink: 0;
 }
 
+/* ─── MCP Type Tabs (modal) ─────────────────────────────────────────────── */
+.mcp-type-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.tab-btn {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.2s, color 0.2s;
+}
+.tab-btn.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+.tab-btn:hover:not(.active) {
+  background: rgba(255,255,255,0.06);
+  color: var(--text-main);
+}
+
+/* ─── MCP Type Badge (sidebar card) ─────────────────────────────────────── */
+.mcp-type-badge {
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-weight: bold;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+.mcp-type-badge.http  { background: #1e3a5f; color: #90cdf4; }
+.mcp-type-badge.stdio { background: #2d3a1e; color: #86efac; }
+
 /* ─── Status field in modal ─────────────────────────────────────────────── */
 .status        { font-size: 13px; margin-top: 10px; min-height: 20px; }
 .status.success { color: #4ade80; }

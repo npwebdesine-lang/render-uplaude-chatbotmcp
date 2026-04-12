@@ -641,9 +641,13 @@ function renderMcpList(servers) {
 
     const div = document.createElement("div");
     div.className = "list-item mcp-card";
+    const typeBadge = s.type === "stdio"
+      ? `<span class="mcp-type-badge stdio">STDIO</span>`
+      : `<span class="mcp-type-badge http">HTTP</span>`;
+
     div.innerHTML = `
       <div class="mcp-info">
-        <div class="mcp-label">${escapeHtml(s.label)}</div>
+        <div class="mcp-label">${typeBadge}${escapeHtml(s.label)}</div>
         <div class="mcp-meta">
           ${getMcpStatusHtml(s.id)}
           <span class="mcp-status-text ${status}">${escapeHtml(statusLabel)}</span>
@@ -705,14 +709,36 @@ async function refreshMcps() {
 
 // ─── MCP Modal ────────────────────────────────────────────────────────────────
 const modalCard = modalOverlay.querySelector(".modal");
+const tabHttp = document.getElementById("tabHttp");
+const tabStdio = document.getElementById("tabStdio");
+const httpFieldsEl = document.getElementById("httpFields");
+const stdioFieldsEl = document.getElementById("stdioFields");
+const stdioCommand = document.getElementById("stdioCommand");
+const stdioArgs = document.getElementById("stdioArgs");
 
-function openModal() {
-  modalOverlay.classList.remove("hidden");
+let mcpMode = "http"; // "http" | "stdio"
+
+function setMcpMode(mode) {
+  mcpMode = mode;
+  tabHttp.classList.toggle("active", mode === "http");
+  tabStdio.classList.toggle("active", mode === "stdio");
+  httpFieldsEl.classList.toggle("hidden", mode !== "http");
+  stdioFieldsEl.classList.toggle("hidden", mode !== "stdio");
   httpStatus.textContent = "";
   httpStatus.className = "status";
+}
+
+tabHttp.addEventListener("click", () => setMcpMode("http"));
+tabStdio.addEventListener("click", () => setMcpMode("stdio"));
+
+function openModal() {
+  setMcpMode("http");
   httpId.value = "";
   httpLabel.value = "";
   httpUrl.value = "";
+  stdioCommand.value = "";
+  stdioArgs.value = "";
+  modalOverlay.classList.remove("hidden");
   anim.modalOpen(modalOverlay, modalCard); // ✨
 }
 
@@ -727,68 +753,103 @@ openMcpModalBtn.addEventListener("click", openModal);
 closeModalBtn.addEventListener("click", closeModal);
 cancelBtn1.addEventListener("click", closeModal);
 
-addHttpBtn.addEventListener("click", async () => {
-  const body = {
-    id: httpId.value.trim(),
-    label: httpLabel.value.trim(),
-    url: httpUrl.value.trim(),
-  };
+/**
+ * פונקציית ping + עדכון UI — משותפת ל-HTTP ו-STDIO
+ */
+async function pingAndFinalize(addedId) {
+  await refreshMcps();
+  mcpStatusMap.set(addedId, "loading");
+  renderMcpList(lastMcpServers);
 
-  if (!body.id || !body.label || !body.url) {
-    httpStatus.textContent = "❌ יש למלא את כל השדות";
-    httpStatus.className = "status error";
-    gsap.fromTo(modalCard, { x: -6 }, { x: 0, duration: 0.4, ease: "elastic.out(3, 0.3)" }); // ✨흔들림
-    return;
+  const pingRes = await fetch(
+    `/api/mcps/${encodeURIComponent(addedId)}/ping`,
+    { headers: apiHeaders }
+  );
+  const pingData = await pingRes.json();
+
+  if (pingData.status === "ready") {
+    mcpStatusMap.set(addedId, "ready");
+    mcpStatusMap.set(`${addedId}_tools`, pingData.toolCount);
+    httpStatus.textContent = `✅ מוכן! ${pingData.toolCount} כלים נטענו בהצלחה`;
+    httpStatus.className = "status success";
+  } else {
+    mcpStatusMap.set(addedId, "error");
+    httpStatus.textContent =
+      mcpMode === "stdio"
+        ? "⚠️ לא ניתן להפעיל את הפקודה — בדוק שהפקודה מותקנת"
+        : "⚠️ השרת נוסף אך לא הגיב — ייתכן שהוא עדיין מתחיל (Render Free)";
+    httpStatus.className = "status warning";
   }
 
-  try {
-    httpStatus.textContent = "מוסיף...";
-    httpStatus.className = "status";
-    addHttpBtn.disabled = true;
-
-    const r = await fetch("/api/mcps/http", {
-      method: "POST",
-      headers: apiHeaders,
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({}));
-      throw new Error(err.error || "שגיאה");
-    }
-
-    const { added } = await r.json();
-    httpStatus.textContent = "✅ נוסף! בודק חיבור לשרת...";
-    httpStatus.className = "status";
-
-    await refreshMcps();
-    mcpStatusMap.set(added.id, "loading");
-    renderMcpList(lastMcpServers);
-
-    const pingRes = await fetch(
-      `/api/mcps/${encodeURIComponent(added.id)}/ping`,
-      { headers: apiHeaders }
-    );
-    const pingData = await pingRes.json();
-
-    if (pingData.status === "ready") {
-      mcpStatusMap.set(added.id, "ready");
-      mcpStatusMap.set(`${added.id}_tools`, pingData.toolCount);
-      httpStatus.textContent = `✅ מוכן! ${pingData.toolCount} כלים נטענו בהצלחה`;
-      httpStatus.className = "status success";
-    } else {
-      mcpStatusMap.set(added.id, "error");
-      httpStatus.textContent = "⚠️ השרת נוסף אך לא הגיב — ייתכן שהוא עדיין מתחיל (Render Free)";
-      httpStatus.className = "status warning";
-    }
-
-    renderMcpList(lastMcpServers);
-    setTimeout(() => { closeModal(); addHttpBtn.disabled = false; }, 2500);
-
-  } catch (e) {
-    httpStatus.textContent = "❌ שגיאה: " + e.message;
-    httpStatus.className = "status error";
-    gsap.fromTo(modalCard, { x: -6 }, { x: 0, duration: 0.4, ease: "elastic.out(3, 0.3)" }); // ✨ שגיאה מנענע
+  renderMcpList(lastMcpServers);
+  setTimeout(() => {
+    closeModal();
     addHttpBtn.disabled = false;
+  }, 2500);
+}
+
+addHttpBtn.addEventListener("click", async () => {
+  const id = httpId.value.trim();
+  const label = httpLabel.value.trim();
+
+  if (mcpMode === "http") {
+    // ─── HTTP mode ───────────────────────────────────────────────
+    const url = httpUrl.value.trim();
+    if (!id || !label || !url) {
+      httpStatus.textContent = "❌ יש למלא את כל השדות";
+      httpStatus.className = "status error";
+      gsap.fromTo(modalCard, { x: -6 }, { x: 0, duration: 0.4, ease: "elastic.out(3, 0.3)" });
+      return;
+    }
+    try {
+      httpStatus.textContent = "מוסיף...";
+      httpStatus.className = "status";
+      addHttpBtn.disabled = true;
+      const r = await fetch("/api/mcps/http", {
+        method: "POST",
+        headers: apiHeaders,
+        body: JSON.stringify({ id, label, url }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "שגיאה");
+      const { added } = await r.json();
+      httpStatus.textContent = "✅ נוסף! בודק חיבור לשרת...";
+      await pingAndFinalize(added.id);
+    } catch (e) {
+      httpStatus.textContent = "❌ שגיאה: " + e.message;
+      httpStatus.className = "status error";
+      gsap.fromTo(modalCard, { x: -6 }, { x: 0, duration: 0.4, ease: "elastic.out(3, 0.3)" });
+      addHttpBtn.disabled = false;
+    }
+
+  } else {
+    // ─── STDIO mode ──────────────────────────────────────────────
+    const command = stdioCommand.value.trim();
+    const args = stdioArgs.value.trim();
+    if (!id || !label || !command) {
+      httpStatus.textContent = "❌ יש למלא מזהה, שם ופקודה";
+      httpStatus.className = "status error";
+      gsap.fromTo(modalCard, { x: -6 }, { x: 0, duration: 0.4, ease: "elastic.out(3, 0.3)" });
+      return;
+    }
+    try {
+      httpStatus.textContent = "מוסיף ומפעיל תהליך...";
+      httpStatus.className = "status";
+      addHttpBtn.disabled = true;
+      const r = await fetch("/api/mcps/stdio", {
+        method: "POST",
+        headers: apiHeaders,
+        body: JSON.stringify({ id, label, command, args }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "שגיאה");
+      const { added } = await r.json();
+      httpStatus.textContent = "✅ נוסף! מפעיל תהליך מקומי...";
+      await pingAndFinalize(added.id);
+    } catch (e) {
+      httpStatus.textContent = "❌ שגיאה: " + e.message;
+      httpStatus.className = "status error";
+      gsap.fromTo(modalCard, { x: -6 }, { x: 0, duration: 0.4, ease: "elastic.out(3, 0.3)" });
+      addHttpBtn.disabled = false;
+    }
   }
 });
 

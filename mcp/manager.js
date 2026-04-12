@@ -50,3 +50,26 @@ export function removeMcp(userId, mcpId) {
   mcps = mcps.filter((m) => m.id !== mcpId);
   userMcps.set(userId, mcps);
 }
+
+/**
+ * מוסיפה שרת STDIO מקומי — מריץ פקודה כתהליך-ילד
+ */
+export function addStdioMcp(userId, { id, label, command, args = [] }) {
+  if (!userId || !id || !label || !command) throw new Error("Missing fields");
+  // args יכול להגיע כ-string מרווחים — נמיר למערך
+  const parsedArgs = Array.isArray(args)
+    ? args
+    : String(args).split(/\s+/).filter(Boolean);
+  const obj = {
+    id,
+    label,
+    type: "stdio",
+    command: command.trim(),
+    args: parsedArgs,
+    addedAt: Date.now(),
+  };
+  const mcps = userMcps.get(userId) || [];
+  mcps.push(obj);
+  userMcps.set(userId, mcps);
+  return obj;
+}

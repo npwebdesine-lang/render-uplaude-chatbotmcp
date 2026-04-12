@@ -7,7 +7,8 @@ global.EventSource = EventSource;
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import { listMcps, addHttpMcp, removeMcp } from "./mcp/manager.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { listMcps, addHttpMcp, addStdioMcp, removeMcp } from "./mcp/manager.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -55,7 +56,7 @@ function normalizeName(name) {
 }
 
 // ─── MCP Connection Cache ───────────────────────────────────────────────────
-// Map<userId, Map<mcpId, { client, tools, status, connectedAt }>>
+// Map<userId, Map<mcpId, { client, tools, transport, status, connectedAt }>>
 const mcpCache = new Map();
 
 function getUserCache(userId) {
@@ -64,10 +65,21 @@ function getUserCache(userId) {
 }
 
 async function connectToMcp(mcpConfig) {
-  if (mcpConfig.type !== "http") return null;
+  let transport;
+  if (mcpConfig.type === "http") {
+    log(`Connecting (HTTP) to ${mcpConfig.url}...`);
+    transport = new SSEClientTransport(new URL(mcpConfig.url));
+  } else if (mcpConfig.type === "stdio") {
+    log(`Connecting (STDIO) command: ${mcpConfig.command} ${mcpConfig.args?.join(" ")}`);
+    transport = new StdioClientTransport({
+      command: mcpConfig.command,
+      args: mcpConfig.args || [],
+    });
+  } else {
+    return null;
+  }
+
   try {
-    log(`Connecting to ${mcpConfig.url}...`);
-    const transport = new SSEClientTransport(new URL(mcpConfig.url));
     const mcpClient = new Client(
       { name: "chatbot", version: "1.0.0" },
       { capabilities: {} }
@@ -80,9 +92,11 @@ async function connectToMcp(mcpConfig) {
     ]);
     const { tools } = await mcpClient.listTools();
     log(`✅ Connected to ${mcpConfig.id} (${tools?.length ?? 0} tools)`);
-    return { client: mcpClient, tools: tools || [], id: mcpConfig.id };
+    return { client: mcpClient, tools: tools || [], id: mcpConfig.id, transport };
   } catch (err) {
     log(`❌ Failed ${mcpConfig.id}: ${err.message}`);
+    // הרג תהליך STDIO אם נוצר לפני הכישלון
+    transport?.close?.().catch(() => {});
     return null;
   }
 }
@@ -102,6 +116,9 @@ async function getOrConnectMcp(userId, mcpConfig) {
   ) {
     return cached;
   }
+
+  // פג תוקף ה-cache — הרג תהליך STDIO ישן לפני reconnect
+  if (cached?.transport) cached.transport.close().catch(() => {});
 
   const conn = await connectToMcp(mcpConfig);
   if (conn) {
@@ -323,9 +340,23 @@ app.post("/api/mcps/http", (req, res) => {
 
 app.delete("/api/mcps/:id", (req, res) => {
   const userId = req.headers["x-user-id"];
-  removeMcp(userId, req.params.id);
+  // הרג תהליך STDIO לפני מחיקה מה-cache
+  const entry = getUserCache(userId).get(req.params.id);
+  if (entry?.transport) entry.transport.close().catch(() => {});
   getUserCache(userId).delete(req.params.id);
+  removeMcp(userId, req.params.id);
   res.json({ ok: true });
+});
+
+// ─── MCP STDIO endpoint ──────────────────────────────────────────────────────
+app.post("/api/mcps/stdio", (req, res) => {
+  const userId = req.headers["x-user-id"];
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    res.json({ ok: true, added: addStdioMcp(userId, req.body) });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 // ─── MCP Ping — בדיקת מוכנות שרת (חשוב ל-Render Free) ─────────────────────
@@ -338,7 +369,9 @@ app.get("/api/mcps/:id/ping", async (req, res) => {
   const config = configs.find((m) => m.id === mcpId);
   if (!config) return res.status(404).json({ error: "MCP not found" });
 
-  // אילוץ חיבור מחדש (לא לסמוך על cache ישן)
+  // הרג תהליך STDIO ישן ואלץ חיבור מחדש
+  const oldEntry = getUserCache(userId).get(mcpId);
+  if (oldEntry?.transport) oldEntry.transport.close().catch(() => {});
   getUserCache(userId).delete(mcpId);
   const conn = await getOrConnectMcp(userId, config);
 

@@ -76,18 +76,43 @@
           <h3>הוספת כלי חדש (MCP)</h3>
           <button id="closeModalBtn" class="icon-btn">✕</button>
         </div>
+
+        <!-- Tab toggle -->
+        <div class="mcp-type-tabs">
+          <button id="tabHttp" class="tab-btn active">🌐 HTTP / SSE</button>
+          <button id="tabStdio" class="tab-btn">💻 STDIO (מקומי)</button>
+        </div>
+
+        <!-- שדות משותפים -->
         <div class="field">
           <label>מזהה כלי (אנגלית, ללא רווחים)</label>
-          <input id="httpId" placeholder="e.g. gmail-service" />
+          <input id="httpId" placeholder="e.g. filesystem" />
         </div>
         <div class="field">
           <label>שם לתצוגה</label>
-          <input id="httpLabel" placeholder="My Gmail" />
+          <input id="httpLabel" placeholder="My Filesystem" />
         </div>
-        <div class="field">
-          <label>כתובת השרת (URL)</label>
-          <input id="httpUrl" placeholder="https://my-server.onrender.com" />
+
+        <!-- HTTP fields -->
+        <div id="httpFields">
+          <div class="field">
+            <label>כתובת השרת (URL)</label>
+            <input id="httpUrl" placeholder="https://my-server.onrender.com" />
+          </div>
         </div>
+
+        <!-- STDIO fields -->
+        <div id="stdioFields" class="hidden">
+          <div class="field">
+            <label>פקודה</label>
+            <input id="stdioCommand" placeholder="npx @modelcontextprotocol/server-filesystem" />
+          </div>
+          <div class="field">
+            <label>ארגומנטים (מופרדים ברווחים)</label>
+            <input id="stdioArgs" placeholder="./docs /tmp" />
+          </div>
+        </div>
+
         <div class="actions">
           <button id="addHttpBtn" class="primary-btn">הוסף כלי</button>
           <button id="cancelBtn1" class="ghost-btn">ביטול</button>
