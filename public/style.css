@@ -428,3 +428,90 @@ body {
     opacity: 0.5;
   }
 }
+
+/* ─── Typing Cursor (Streaming) ─────────────────────────────────────────── */
+.typing-cursor::after {
+  content: "▌";
+  color: var(--accent);
+  animation: blinker 0.8s step-start infinite;
+}
+
+/* ─── Download Button ───────────────────────────────────────────────────── */
+.download-btn-wrap {
+  margin-top: 10px;
+  text-align: left;
+}
+.download-btn {
+  font-size: 12px;
+  padding: 5px 12px;
+}
+
+/* ─── MCP Status Dots ───────────────────────────────────────────────────── */
+.mcp-dot {
+  font-size: 11px;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+.mcp-dot.mcp-ready    { color: #4ade80; } /* ירוק */
+.mcp-dot.mcp-error    { color: #f87171; } /* אדום */
+.mcp-dot.mcp-unknown  { color: #6b7280; } /* אפור */
+.mcp-dot.mcp-loading  {
+  color: #facc15; /* צהוב */
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.mcp-status-text {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.mcp-status-text.ready   { color: #4ade80; }
+.mcp-status-text.error   { color: #f87171; }
+.mcp-status-text.loading { color: #facc15; }
+
+.mcp-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.mcp-label {
+  font-weight: bold;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mcp-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.mcp-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* ─── Status field in modal ─────────────────────────────────────────────── */
+.status        { font-size: 13px; margin-top: 10px; min-height: 20px; }
+.status.success { color: #4ade80; }
+.status.warning { color: #facc15; }
+.status.error   { color: #f87171; }
+
+/* ─── Live tool badge (during streaming) ────────────────────────────────── */
+.tool-badge-live {
+  background: #2d3748;
+  color: #facc15;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-family: monospace;
+  margin-top: 8px;
+  display: inline-block;
+  animation: blinker 1s linear infinite;
+}

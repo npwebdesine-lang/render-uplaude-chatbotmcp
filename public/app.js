@@ -1,9 +1,8 @@
 /**
  * public/app.js
- * לוגיקת צד לקוח - כולל תמיכה בהפרדת משתמשים (Multi-Tenancy)
- * וכולל מנוע חכם להמרת קוד לקבצים להורדה (Blob Magic)
  */
 
+// ─── User Identity ───────────────────────────────────────────────────────────
 function getUserId() {
   let uid = localStorage.getItem("chatbot_multi_tenant_uid");
   if (!uid) {
@@ -18,6 +17,7 @@ const apiHeaders = {
   "X-User-ID": getUserId(),
 };
 
+// ─── DOM Elements ────────────────────────────────────────────────────────────
 const chatEl = document.getElementById("chat");
 const form = document.getElementById("form");
 const input = document.getElementById("input");
@@ -40,9 +40,15 @@ const mobileMenuBtn = document.getElementById("mobileMenuBtn");
 const sidebar = document.getElementById("sidebar");
 const closeSidebarBtn = document.getElementById("closeSidebarBtn");
 
+// ─── State ───────────────────────────────────────────────────────────────────
 const STORAGE_KEY = `mcp_chats_${getUserId()}`;
 let state = loadState();
 
+// סטטוס מוכנות של כל MCP: id -> 'loading' | 'ready' | 'error' | 'unknown'
+const mcpStatusMap = new Map();
+let lastMcpServers = [];
+
+// ─── Chat State ──────────────────────────────────────────────────────────────
 function makeId() {
   return `chat_${Date.now()}`;
 }
@@ -71,7 +77,75 @@ function getActiveChat() {
   return state.chats[state.activeChatId];
 }
 
-// --- ניהול ה-UI של הצ'אט ויצירת קבצים להורדה (Blob Magic) ---
+// ─── HTML Escape ─────────────────────────────────────────────────────────────
+function escapeHtml(str) {
+  return String(str || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+// ─── Download Buttons (Blob Magic) ───────────────────────────────────────────
+const MIME_TYPES = {
+  csv: "text/csv",
+  html: "text/html",
+  htm: "text/html",
+  py: "text/x-python",
+  js: "text/javascript",
+  ts: "text/typescript",
+  json: "application/json",
+  xml: "application/xml",
+  txt: "text/plain",
+  md: "text/markdown",
+  sql: "text/plain",
+  sh: "text/x-sh",
+  css: "text/css",
+};
+
+function addDownloadButtons(contentDiv) {
+  contentDiv.querySelectorAll("pre").forEach((pre) => {
+    const codeBlock = pre.querySelector("code");
+    if (!codeBlock) return;
+
+    // מניעת כפל כפתורים
+    if (pre.querySelector(".download-btn-wrap")) return;
+
+    let extension = "txt";
+    const langClass = Array.from(codeBlock.classList).find((c) =>
+      c.startsWith("language-")
+    );
+    if (langClass) extension = langClass.replace("language-", "");
+
+    const mime = MIME_TYPES[extension] || "text/plain";
+    const needsBom = extension === "csv"; // BOM רק ל-CSV (אקסל)
+
+    const btnDiv = document.createElement("div");
+    btnDiv.className = "download-btn-wrap";
+
+    const downloadBtn = document.createElement("button");
+    downloadBtn.className = "primary-btn download-btn";
+    downloadBtn.textContent = `⬇ הורד קובץ (.${extension})`;
+
+    downloadBtn.onclick = () => {
+      const fileContent = codeBlock.innerText;
+      const parts = needsBom ? ["\ufeff", fileContent] : [fileContent];
+      const blob = new Blob(parts, { type: `${mime};charset=utf-8` });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `AI_Generated_${Date.now()}.${extension}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+
+    btnDiv.appendChild(downloadBtn);
+    pre.appendChild(btnDiv);
+  });
+}
+
+// ─── Chat Bubbles ─────────────────────────────────────────────────────────────
 function addBubble(text, who = "me", toolsUsed = []) {
   const div = document.createElement("div");
   div.className = `bubble ${who}`;
@@ -79,89 +153,102 @@ function addBubble(text, who = "me", toolsUsed = []) {
   const contentDiv = document.createElement("div");
 
   if (who === "bot") {
-    // 1. תרגום הטקסט של ה-AI ל-Markdown (טבלאות, קוד, לינקים וכו')
     contentDiv.className = "markdown-content";
     contentDiv.innerHTML = marked.parse(text);
-
-    // 2. מנוע יצירת הקבצים (Blob Magic)!
-    // מחפשים כל אזור שה-AI כתב בו קוד או נתונים
-    const preBlocks = contentDiv.querySelectorAll("pre");
-    preBlocks.forEach((pre) => {
-      const codeBlock = pre.querySelector("code");
-      if (codeBlock) {
-        // מנסים להבין איזה סוג קובץ ה-AI רצה לייצר (csv, html, python וכו')
-        let extension = "txt"; // ברירת מחדל
-        const langClass = Array.from(codeBlock.classList).find((c) =>
-          c.startsWith("language-"),
-        );
-        if (langClass) {
-          extension = langClass.replace("language-", ""); // שולף את הסיומת
-        }
-
-        // יצירת כפתור הורדה מעוצב
-        const btnDiv = document.createElement("div");
-        btnDiv.style.marginTop = "10px";
-        btnDiv.style.textAlign = "left"; // אנגלית מיושרת לשמאל
-
-        const downloadBtn = document.createElement("button");
-        downloadBtn.className = "primary-btn";
-        downloadBtn.style.fontSize = "12px";
-        downloadBtn.style.padding = "5px 12px";
-        downloadBtn.innerHTML = `⬇️ לחץ להורדה כקובץ (.${extension})`;
-
-        // מה קורה כשלוחצים על הכפתור? הדפדפן מייצר קובץ מיד!
-        downloadBtn.onclick = () => {
-          const fileContent = codeBlock.innerText;
-
-          // אריזת הטקסט לקובץ וירטואלי בזיכרון ה-RAM
-          // הוספנו את התו הנסתר \uFEFF כדי שאקסל יקרא עברית בלי ג'יבריש
-          const blob = new Blob(["\ufeff", fileContent], {
-            type: "text/csv;charset=utf-8",
-          });
-          const url = URL.createObjectURL(blob);
-
-          // "לחיצה" נסתרת על קישור כדי להתחיל הורדה למחשב
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = `AI_Generated_${Date.now()}.${extension}`;
-          document.body.appendChild(a);
-          a.click();
-
-          // ניקוי זיכרון הדפדפן
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        };
-
-        btnDiv.appendChild(downloadBtn);
-        pre.appendChild(btnDiv); // הוספת הכפתור מתחת לבלוק התוכן
-      }
-    });
+    addDownloadButtons(contentDiv);
   } else {
-    // אם המשתמש שואל - נציג כטקסט רגיל אבל נשמור על ירידות השורה שלו
     contentDiv.textContent = text;
     contentDiv.style.whiteSpace = "pre-wrap";
   }
 
   div.appendChild(contentDiv);
 
-  if (toolsUsed && toolsUsed.length > 0) {
-    const toolsDiv = document.createElement("div");
-    toolsDiv.className = "tools-used";
-    toolsDiv.innerHTML = toolsUsed
-      .map((t) => `<div class="tool-badge">⚙️ פעל: ${escapeHtml(t.name)}</div>`)
-      .join("");
-    div.appendChild(toolsDiv);
+  if (toolsUsed?.length > 0) {
+    div.appendChild(buildToolsDiv(toolsUsed));
   }
 
   chatEl.appendChild(div);
   chatEl.scrollTop = chatEl.scrollHeight;
+  return div;
 }
 
+function buildToolsDiv(tools) {
+  const toolsDiv = document.createElement("div");
+  toolsDiv.className = "tools-used";
+  toolsDiv.innerHTML = tools
+    .map((t) => `<div class="tool-badge">⚙️ פעל: ${escapeHtml(t.name)}</div>`)
+    .join("");
+  return toolsDiv;
+}
+
+/**
+ * יוצר בועת bot ריקה שתתמלא בזמן ה-streaming
+ */
+function createStreamBubble() {
+  const div = document.createElement("div");
+  div.className = "bubble bot";
+
+  const contentDiv = document.createElement("div");
+  contentDiv.className = "markdown-content";
+
+  const cursor = document.createElement("span");
+  cursor.className = "typing-cursor";
+  contentDiv.appendChild(cursor);
+
+  div.appendChild(contentDiv);
+  chatEl.appendChild(div);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  return { div, contentDiv, cursor };
+}
+
+/**
+ * מעדכן את תוכן הבועה תוך כדי streaming (עם requestAnimationFrame לביצועים)
+ */
+let renderScheduled = false;
+let pendingText = "";
+let pendingContentDiv = null;
+let pendingCursor = null;
+
+function scheduleRender(contentDiv, text, cursor) {
+  pendingText = text;
+  pendingContentDiv = contentDiv;
+  pendingCursor = cursor;
+  if (!renderScheduled) {
+    renderScheduled = true;
+    requestAnimationFrame(() => {
+      renderScheduled = false;
+      if (!pendingContentDiv) return;
+      pendingContentDiv.innerHTML = marked.parse(pendingText);
+      if (pendingCursor) {
+        const cur = document.createElement("span");
+        cur.className = "typing-cursor";
+        pendingContentDiv.appendChild(cur);
+      }
+      chatEl.scrollTop = chatEl.scrollHeight;
+    });
+  }
+}
+
+/**
+ * סוגר את הבועה אחרי שה-stream נגמר — מוסיף כפתורי הורדה ותגיות כלים
+ */
+function finalizeStreamBubble(div, contentDiv, fullText, toolsUsed) {
+  contentDiv.innerHTML = marked.parse(fullText);
+  addDownloadButtons(contentDiv);
+
+  if (toolsUsed?.length > 0) {
+    div.appendChild(buildToolsDiv(toolsUsed));
+  }
+
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+// ─── Chat Rendering ───────────────────────────────────────────────────────────
 function renderActiveChat() {
   chatEl.innerHTML = "";
   const active = getActiveChat();
   currentChatTitle.textContent = active ? active.title : "צ'אט";
-  if (active && active.messages) {
+  if (active?.messages) {
     for (const m of active.messages) {
       addBubble(m.text, m.who, m.tools);
     }
@@ -191,13 +278,15 @@ function renameChatIfFirstMessage(chatId, firstUserMessage) {
   const c = state.chats[chatId];
   if (c && c.messages.length === 1 && c.title.startsWith("צ'אט")) {
     c.title =
-      firstUserMessage.slice(0, 20) + (firstUserMessage.length > 20 ? "…" : "");
+      firstUserMessage.slice(0, 20) +
+      (firstUserMessage.length > 20 ? "…" : "");
   }
 }
 
+// ─── Chat Buttons ─────────────────────────────────────────────────────────────
 newChatBtn.addEventListener("click", () => {
   const newId = makeId();
-  state.chats[newId] = { title: `צ'אט חדש`, messages: [] };
+  state.chats[newId] = { title: "צ'אט חדש", messages: [] };
   state.activeChatId = newId;
   saveState();
   renderChatSidebarList();
@@ -229,21 +318,20 @@ deleteChatBtn.addEventListener("click", async () => {
   renderActiveChat();
 });
 
-// --- שליטה על תיבת ההקלדה והוספת יכולת שימוש ב- Shift+Enter ---
+// ─── Textarea auto-resize + Shift+Enter ──────────────────────────────────────
 input.addEventListener("input", function () {
   this.style.height = "auto";
-  this.style.height =
-    (this.scrollHeight < 150 ? this.scrollHeight : 150) + "px";
+  this.style.height = (this.scrollHeight < 150 ? this.scrollHeight : 150) + "px";
 });
 
 input.addEventListener("keydown", function (event) {
-  // אם נלחץ אנטר ללא שיפט
   if (event.key === "Enter" && !event.shiftKey) {
-    event.preventDefault(); // תעצור ירידת שורה
-    sendBtn.click(); // תשגר את הפורם
+    event.preventDefault();
+    sendBtn.click();
   }
 });
 
+// ─── Form Submit (Streaming) ──────────────────────────────────────────────────
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const msg = input.value.trim();
@@ -259,137 +347,284 @@ form.addEventListener("submit", async (e) => {
   addBubble(msg, "me");
 
   input.value = "";
-  input.style.height = "auto"; // איפוס גובה תיבת הטקסט
+  input.style.height = "auto";
   sendBtn.disabled = true;
 
-  const loadingId = "loader";
-  const loadingBubble = document.createElement("div");
-  loadingBubble.className = "bubble bot blink";
-  loadingBubble.id = loadingId;
-  loadingBubble.textContent = "מקליד...";
-  chatEl.appendChild(loadingBubble);
-  chatEl.scrollTop = chatEl.scrollHeight;
+  // יצירת בועת bot ריקה שתתמלא ב-streaming
+  const { div: bubbleDiv, contentDiv, cursor } = createStreamBubble();
+  let fullText = "";
+  let usedTools = [];
 
   try {
-    const r = await fetch("/api/chat", {
+    const response = await fetch("/api/chat", {
       method: "POST",
       headers: apiHeaders,
       body: JSON.stringify({ chatId, message: msg }),
     });
-    const data = await r.json().catch(() => ({}));
-    document.getElementById(loadingId)?.remove();
 
-    if (!r.ok) throw new Error(data?.error || "Request failed");
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || "Request failed");
+    }
 
-    activeChat.messages.push({
-      who: "bot",
-      text: data.reply,
-      tools: data.usedTools,
-    });
-    saveState();
-    addBubble(data.reply, "bot", data.usedTools);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop(); // השורה האחרונה אולי חלקית
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        let data;
+        try {
+          data = JSON.parse(line.slice(6));
+        } catch {
+          continue;
+        }
+
+        if (data.type === "chunk") {
+          fullText += data.text;
+          scheduleRender(contentDiv, fullText, cursor);
+        } else if (data.type === "tool") {
+          // הצג תג כלי בזמן אמת
+          const badge = document.createElement("div");
+          badge.className = "tool-badge tool-badge-live";
+          badge.textContent = `⚙️ מפעיל: ${escapeHtml(data.name)}`;
+          bubbleDiv.appendChild(badge);
+          chatEl.scrollTop = chatEl.scrollHeight;
+        } else if (data.type === "done") {
+          usedTools = data.usedTools || [];
+          // הסרת תגי כלים חיים ועיבוד סופי
+          bubbleDiv
+            .querySelectorAll(".tool-badge-live")
+            .forEach((el) => el.remove());
+          finalizeStreamBubble(bubbleDiv, contentDiv, fullText, usedTools);
+        } else if (data.type === "error") {
+          throw new Error(data.message);
+        }
+      }
+    }
   } catch (err) {
-    document.getElementById(loadingId)?.remove();
-    activeChat.messages.push({ who: "bot", text: "שגיאה: " + err.message });
-    saveState();
-    addBubble("שגיאה: " + err.message, "bot");
-  } finally {
-    sendBtn.disabled = false;
-    input.focus();
+    finalizeStreamBubble(bubbleDiv, contentDiv, `שגיאה: ${err.message}`, []);
+    fullText = `שגיאה: ${err.message}`;
   }
+
+  activeChat.messages.push({ who: "bot", text: fullText, tools: usedTools });
+  saveState();
+  sendBtn.disabled = false;
+  input.focus();
 });
 
-// --- MCP UI ---
-function openModal() {
-  modalOverlay.classList.remove("hidden");
-  httpStatus.textContent = "";
+// ─── MCP Status ───────────────────────────────────────────────────────────────
+function getMcpStatusHtml(id) {
+  const s = mcpStatusMap.get(id) || "unknown";
+  if (s === "loading")
+    return `<span class="mcp-dot mcp-loading" title="מתחבר לשרת...">◉</span>`;
+  if (s === "ready")
+    return `<span class="mcp-dot mcp-ready" title="מוכן לשימוש">●</span>`;
+  if (s === "error")
+    return `<span class="mcp-dot mcp-error" title="שגיאת חיבור">●</span>`;
+  return `<span class="mcp-dot mcp-unknown" title="לא נבדק">○</span>`;
 }
-function closeModal() {
-  modalOverlay.classList.add("hidden");
-}
-openMcpModalBtn.addEventListener("click", openModal);
-closeModalBtn.addEventListener("click", closeModal);
-cancelBtn1.addEventListener("click", closeModal);
 
-async function refreshMcps() {
+/**
+ * שולח ping לשרת MCP ומעדכן את הסטטוס
+ */
+async function pingMcp(mcpId) {
+  mcpStatusMap.set(mcpId, "loading");
+  renderMcpList(lastMcpServers);
+
   try {
-    const r = await fetch("/api/mcps", { headers: apiHeaders });
+    const r = await fetch(`/api/mcps/${encodeURIComponent(mcpId)}/ping`, {
+      headers: apiHeaders,
+    });
     const data = await r.json();
-    renderMcpList(data.servers || []);
-  } catch (e) {
-    console.error("Failed to fetch MCPs", e);
+    if (data.status === "ready") {
+      mcpStatusMap.set(mcpId, "ready");
+      // שמור tool count להצגה
+      mcpStatusMap.set(`${mcpId}_tools`, data.toolCount);
+    } else {
+      mcpStatusMap.set(mcpId, "error");
+    }
+  } catch {
+    mcpStatusMap.set(mcpId, "error");
   }
+
+  renderMcpList(lastMcpServers);
 }
 
 function renderMcpList(servers) {
+  lastMcpServers = servers;
   mcpList.innerHTML = "";
+
   if (!servers.length) {
-    mcpList.innerHTML = `<div style="font-size:12px; color:gray;">אין כלים מחוברים.</div>`;
+    mcpList.innerHTML = `<div style="font-size:12px; color:gray; padding:5px;">אין כלים מחוברים.</div>`;
     return;
   }
+
   for (const s of servers) {
+    const status = mcpStatusMap.get(s.id) || "unknown";
+    const toolCount = mcpStatusMap.get(`${s.id}_tools`);
+
+    let statusLabel = "";
+    if (status === "loading") statusLabel = "מתחבר...";
+    else if (status === "ready")
+      statusLabel =
+        toolCount !== undefined ? `${toolCount} כלים נטענו` : "מוכן";
+    else if (status === "error") statusLabel = "שגיאת חיבור";
+
     const div = document.createElement("div");
     div.className = "list-item mcp-card";
     div.innerHTML = `
-      <div>
-        <div style="font-weight:bold;">${escapeHtml(s.label)}</div>
-        <div style="font-size:11px; color:#a0c4ff;">${escapeHtml(s.id)}</div>
+      <div class="mcp-info">
+        <div class="mcp-label">${escapeHtml(s.label)}</div>
+        <div class="mcp-meta">
+          ${getMcpStatusHtml(s.id)}
+          <span class="mcp-status-text ${status}">${escapeHtml(statusLabel)}</span>
+        </div>
       </div>
-      <button class="icon-btn danger-text" data-del="${escapeHtml(s.id)}">🗑️</button>
+      <div class="mcp-actions">
+        <button class="icon-btn" data-ping="${escapeHtml(s.id)}" title="בדוק חיבור">🔄</button>
+        <button class="icon-btn danger-text" data-del="${escapeHtml(s.id)}" title="הסר">🗑️</button>
+      </div>
     `;
     mcpList.appendChild(div);
   }
+
+  // כפתורי ping
+  mcpList.querySelectorAll("[data-ping]").forEach((btn) => {
+    btn.addEventListener("click", () => pingMcp(btn.getAttribute("data-ping")));
+  });
+
+  // כפתורי מחיקה
   mcpList.querySelectorAll("[data-del]").forEach((btn) => {
     btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-del");
       if (!confirm("לנתק את הכלי הזה?")) return;
-      await fetch(
-        `/api/mcps/${encodeURIComponent(btn.getAttribute("data-del"))}`,
-        {
-          method: "DELETE",
-          headers: apiHeaders,
-        },
-      );
+      await fetch(`/api/mcps/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        headers: apiHeaders,
+      });
+      mcpStatusMap.delete(id);
+      mcpStatusMap.delete(`${id}_tools`);
       await refreshMcps();
     });
   });
 }
 
-addHttpBtn.addEventListener("click", async () => {
+async function refreshMcps() {
   try {
-    httpStatus.textContent = "מתחבר...";
-    const body = {
-      id: httpId.value.trim(),
-      label: httpLabel.value.trim(),
-      url: httpUrl.value.trim(),
-    };
+    const r = await fetch("/api/mcps", { headers: apiHeaders });
+    const data = await r.json();
+    const servers = data.servers || [];
+    renderMcpList(servers);
+    // ping אוטומטי לכל שרת שעדיין לא נבדק
+    for (const s of servers) {
+      if (!mcpStatusMap.has(s.id) || mcpStatusMap.get(s.id) === "unknown") {
+        pingMcp(s.id); // לא await — מבוצע במקביל ברקע
+      }
+    }
+  } catch (e) {
+    console.error("Failed to fetch MCPs", e);
+  }
+}
+
+// ─── MCP Modal ────────────────────────────────────────────────────────────────
+function openModal() {
+  modalOverlay.classList.remove("hidden");
+  httpStatus.textContent = "";
+  httpId.value = "";
+  httpLabel.value = "";
+  httpUrl.value = "";
+}
+function closeModal() {
+  modalOverlay.classList.add("hidden");
+}
+
+openMcpModalBtn.addEventListener("click", openModal);
+closeModalBtn.addEventListener("click", closeModal);
+cancelBtn1.addEventListener("click", closeModal);
+
+addHttpBtn.addEventListener("click", async () => {
+  const body = {
+    id: httpId.value.trim(),
+    label: httpLabel.value.trim(),
+    url: httpUrl.value.trim(),
+  };
+
+  if (!body.id || !body.label || !body.url) {
+    httpStatus.textContent = "❌ יש למלא את כל השדות";
+    return;
+  }
+
+  try {
+    httpStatus.textContent = "מוסיף...";
+    addHttpBtn.disabled = true;
+
     const r = await fetch("/api/mcps/http", {
       method: "POST",
       headers: apiHeaders,
       body: JSON.stringify(body),
     });
-    if (!r.ok) throw new Error("Connection failed");
-    httpStatus.textContent = "✅ חובר בהצלחה";
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.error || "שגיאה");
+    }
+
+    const { added } = await r.json();
+    httpStatus.textContent = "✅ נוסף! בודק חיבור לשרת...";
+    httpStatus.className = "status";
+
+    await refreshMcps();
+
+    // ping מיידי ועדכון הסטטוס בחלון
+    mcpStatusMap.set(added.id, "loading");
+    renderMcpList(lastMcpServers);
+
+    const pingRes = await fetch(
+      `/api/mcps/${encodeURIComponent(added.id)}/ping`,
+      { headers: apiHeaders }
+    );
+    const pingData = await pingRes.json();
+
+    if (pingData.status === "ready") {
+      mcpStatusMap.set(added.id, "ready");
+      mcpStatusMap.set(`${added.id}_tools`, pingData.toolCount);
+      httpStatus.textContent = `✅ מוכן! ${pingData.toolCount} כלים נטענו בהצלחה`;
+      httpStatus.className = "status success";
+    } else {
+      mcpStatusMap.set(added.id, "error");
+      httpStatus.textContent =
+        "⚠️ השרת נוסף אך לא הגיב — ייתכן שהוא עדיין מתחיל (Render Free)";
+      httpStatus.className = "status warning";
+    }
+
+    renderMcpList(lastMcpServers);
+
     setTimeout(() => {
       closeModal();
-      refreshMcps();
-    }, 1000);
+      addHttpBtn.disabled = false;
+    }, 2500);
   } catch (e) {
     httpStatus.textContent = "❌ שגיאה: " + e.message;
+    httpStatus.className = "status error";
+    addHttpBtn.disabled = false;
   }
 });
 
-function escapeHtml(str) {
-  return String(str || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
+// ─── Mobile Sidebar ───────────────────────────────────────────────────────────
 mobileMenuBtn.addEventListener("click", () => sidebar.classList.add("open"));
 closeSidebarBtn.addEventListener("click", () =>
-  sidebar.classList.remove("open"),
+  sidebar.classList.remove("open")
 );
 
+// ─── Init ─────────────────────────────────────────────────────────────────────
 renderChatSidebarList();
 renderActiveChat();
 refreshMcps();
