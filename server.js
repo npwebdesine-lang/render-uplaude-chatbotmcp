@@ -161,6 +161,10 @@ app.post("/api/chat", async (req, res) => {
   if (!chatId || !message)
     return res.status(400).json({ error: "Missing data" });
 
+  // יצירת בקר ביטול - אם המשתמש סוגר את החלון, נעצור את הבקשה ל-OpenAI
+  const abortController = new AbortController();
+  req.on("close", () => abortController.abort());
+
   const send = setupSSE(res);
 
   try {
@@ -210,6 +214,7 @@ app.post("/api/chat", async (req, res) => {
         tools: allTools.length > 0 ? allTools : undefined,
         tool_choice: allTools.length > 0 ? "auto" : undefined,
         stream: true,
+        signal: abortController.signal,
       });
 
       let chunkText = "";
@@ -309,6 +314,10 @@ app.post("/api/chat", async (req, res) => {
     send({ type: "done", usedTools: usedToolsLog });
     res.end();
   } catch (err) {
+    if (err.name === "AbortError") {
+      console.log(`[Chatbot] Request aborted by user (${userId})`);
+      return res.end();
+    }
     console.error("Server Error:", err);
     send({ type: "error", message: err.message });
     res.end();
