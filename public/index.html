@@ -44,15 +44,6 @@
           <div id="mcpList" class="scrollable-list"></div>
         </div>
 
-        <div class="sidebar-section">
-          <div class="section-title row">
-            <span>MCP מקומי 💻</span>
-            <button id="openLocalMcpModalBtn" class="icon-btn" title="הוסף MCP מקומי">
-              ➕
-            </button>
-          </div>
-          <div id="localMcpList" class="scrollable-list"></div>
-        </div>
       </aside>
 
       <main class="main-chat">
@@ -87,13 +78,7 @@
           <button id="closeModalBtn" class="icon-btn">✕</button>
         </div>
 
-        <!-- Tab toggle -->
-        <div class="mcp-type-tabs">
-          <button id="tabHttp" class="tab-btn active">🌐 HTTP / SSE</button>
-          <button id="tabStdio" class="tab-btn">💻 STDIO (מקומי)</button>
-        </div>
-
-        <!-- שדות משותפים -->
+        <!-- שדות -->
         <div class="field">
           <label>מזהה כלי (אנגלית, ללא רווחים)</label>
           <input id="httpId" placeholder="e.g. filesystem" />
@@ -111,50 +96,11 @@
           </div>
         </div>
 
-        <!-- STDIO fields -->
-        <div id="stdioFields" class="hidden">
-          <div class="field">
-            <label>פקודה</label>
-            <input id="stdioCommand" placeholder="npx @modelcontextprotocol/server-filesystem" />
-          </div>
-          <div class="field">
-            <label>ארגומנטים (מופרדים ברווחים)</label>
-            <input id="stdioArgs" placeholder="./docs /tmp" />
-          </div>
-        </div>
-
         <div class="actions">
           <button id="addHttpBtn" class="primary-btn">הוסף כלי</button>
           <button id="cancelBtn1" class="ghost-btn">ביטול</button>
         </div>
         <div id="httpStatus" class="status"></div>
-      </div>
-    </div>
-
-    <!-- Modal: MCP מקומי -->
-    <div id="localMcpModal" class="modal-overlay hidden">
-      <div class="modal">
-        <div class="modal-head">
-          <h3>הוספת MCP מקומי 💻</h3>
-          <button id="closeLocalModalBtn" class="icon-btn">✕</button>
-        </div>
-        <div class="field">
-          <label>מזהה כלי (אנגלית, ללא רווחים)</label>
-          <input id="localId" placeholder="my-python-server" />
-        </div>
-        <div class="field">
-          <label>שם לתצוגה</label>
-          <input id="localLabel" placeholder="Python Server" />
-        </div>
-        <div class="field">
-          <label>פקודה להרצה עם bridge.js</label>
-          <input id="localCommand" placeholder="python my_server.py" />
-        </div>
-        <div class="actions">
-          <button id="addLocalMcpBtn" class="primary-btn">שמור</button>
-          <button id="cancelLocalBtn" class="ghost-btn">ביטול</button>
-        </div>
-        <div id="localMcpStatus" class="status"></div>
       </div>
     </div>
 
