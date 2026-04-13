@@ -50,4 +50,3 @@ export function removeMcp(userId, mcpId) {
   mcps = mcps.filter((m) => m.id !== mcpId);
   userMcps.set(userId, mcps);
 }
-

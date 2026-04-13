@@ -20,8 +20,8 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const chats = new Map(); // chatId -> messages[]
 
 const MODEL_NAME = "gpt-4o";
-const MAX_HISTORY = 30;        // כמה הודעות לשמור בזיכרון
-const MAX_TOOL_LOOPS = 5;      // מקסימום סבבי tool calling
+const MAX_HISTORY = 30; // כמה הודעות לשמור בזיכרון
+const MAX_TOOL_LOOPS = 5; // מקסימום סבבי tool calling
 const MCP_TIMEOUT_MS = 60_000; // timeout לחיבור MCP
 const MCP_CACHE_TTL_MS = 10 * 60_000; // כמה זמן לשמור חיבור ב-cache (10 דקות)
 
@@ -29,9 +29,7 @@ const MCP_CACHE_TTL_MS = 10 * 60_000; // כמה זמן לשמור חיבור ב-
 const rateLimitMap = new Map();
 function checkRateLimit(userId) {
   const now = Date.now();
-  const prev = (rateLimitMap.get(userId) || []).filter(
-    (t) => now - t < 60_000
-  );
+  const prev = (rateLimitMap.get(userId) || []).filter((t) => now - t < 60_000);
   if (prev.length >= 20) return false;
   prev.push(now);
   rateLimitMap.set(userId, prev);
@@ -71,17 +69,22 @@ async function connectToMcp(mcpConfig) {
   try {
     const mcpClient = new Client(
       { name: "chatbot", version: "1.0.0" },
-      { capabilities: {} }
+      { capabilities: {} },
     );
     await Promise.race([
       mcpClient.connect(transport),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout")), MCP_TIMEOUT_MS)
+        setTimeout(() => reject(new Error("Timeout")), MCP_TIMEOUT_MS),
       ),
     ]);
     const { tools } = await mcpClient.listTools();
     log(`✅ Connected to ${mcpConfig.id} (${tools?.length ?? 0} tools)`);
-    return { client: mcpClient, tools: tools || [], id: mcpConfig.id, transport };
+    return {
+      client: mcpClient,
+      tools: tools || [],
+      id: mcpConfig.id,
+      transport,
+    };
   } catch (err) {
     log(`❌ Failed ${mcpConfig.id}: ${err.message}`);
     transport?.close?.().catch(() => {});
@@ -172,7 +175,7 @@ app.post("/api/chat", async (req, res) => {
     const clientMap = new Map();
 
     const connections = await Promise.all(
-      mcpConfigs.map((c) => getOrConnectMcp(userId, c))
+      mcpConfigs.map((c) => getOrConnectMcp(userId, c)),
     );
 
     for (const conn of connections) {
@@ -183,7 +186,10 @@ app.post("/api/chat", async (req, res) => {
             function: {
               name: tool.name,
               description: tool.description || `Get info about ${tool.name}`,
-              parameters: tool.inputSchema || { type: "object", properties: {} },
+              parameters: tool.inputSchema || {
+                type: "object",
+                properties: {},
+              },
             },
           });
           clientMap.set(tool.name, conn.client);
@@ -366,5 +372,5 @@ app.get("/healthz", (_req, res) => res.send("OK"));
 
 const port = process.env.PORT || 3000;
 app.listen(port, "0.0.0.0", () =>
-  console.log(`Chatbot listening on port ${port}`)
+  console.log(`Chatbot listening on port ${port}`),
 );
