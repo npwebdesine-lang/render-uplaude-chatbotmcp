@@ -395,6 +395,18 @@ body {
   display: none;
 }
 
+/* Sidebar Backdrop for mobile */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 55;
+  display: none;
+}
+.sidebar-backdrop.visible {
+  display: block;
+}
+
 @media (max-width: 768px) {
   .mobile-menu-btn {
     display: block;

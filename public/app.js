@@ -959,6 +959,19 @@ addHttpBtn.addEventListener("click", async () => {
 mobileMenuBtn.addEventListener("click", () => anim.sidebarOpen(sidebar)); // ✨
 closeSidebarBtn.addEventListener("click", () => anim.sidebarClose(sidebar)); // ✨
 
+// ─── Sidebar Backdrop ───────────────────────────────────────────────────────
+const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+sidebarBackdrop.addEventListener("click", () => {
+  anim.sidebarClose(sidebar);
+});
+
+// Close sidebar when clicking outside in mobile view
+window.addEventListener("resize", () => {
+  if (window.innerWidth > 768 && sidebar.classList.contains("open")) {
+    anim.sidebarClose(sidebar);
+  }
+});
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 // סדר הפעולות בטעינה:
 // 1. מרנדר את הסרגל הצדדי
