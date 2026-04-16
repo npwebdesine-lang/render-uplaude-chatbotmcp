@@ -306,7 +306,6 @@ app.post("/api/chat", async (req, res) => {
         tools: allTools.length > 0 ? allTools : undefined, // כלים זמינים
         tool_choice: allTools.length > 0 ? "auto" : undefined, // GPT מחליט מתי להשתמש
         stream: true,
-        signal: abortController.signal, // ← מאפשר ביטול אם המשתמש עוזב
       });
 
       let chunkText = ""; // טקסט שמצטבר מה-stream
