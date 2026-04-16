@@ -517,3 +517,51 @@ body {
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.03);
 }
+/* ─── תיקוני מבנה ומצבים (מודל) ────────────────────────────────────────── */
+
+/* מחלקת ההסתרה הקריטית ל-JS */
+.hidden {
+  display: none !important;
+}
+
+/* סידור השדות אחד מתחת לשני */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.field label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* אזור הכפתורים בתחתית המודל */
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+/* אזור הודעות הסטטוס (שגיאה/הצלחה) */
+.status {
+  font-size: 13px;
+  margin-top: 15px;
+  min-height: 20px;
+  text-align: center;
+  font-weight: 500;
+}
+
+.status.error {
+  color: var(--danger);
+}
+
+.status.success {
+  color: var(--accent);
+}
+
+.status.warning {
+  color: #facc15;
+}
