@@ -37,10 +37,10 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const chats = new Map();
 
 // ─── קבועי תצורה ─────────────────────────────────────────────────────────────
-const MODEL_NAME = "gpt-4o";          // המודל של OpenAI שנשתמש בו
-const MAX_HISTORY = 30;               // כמה הודעות לשמור בזיכרון (הישנות נמחקות)
-const MAX_TOOL_LOOPS = 5;             // מקסימום סיבובי tool calling לפני עצירה
-const MCP_TIMEOUT_MS = 60_000;        // 60 שניות — Render Free לוקח זמן להתעורר
+const MODEL_NAME = "gpt-4o"; // המודל של OpenAI שנשתמש בו
+const MAX_HISTORY = 30; // כמה הודעות לשמור בזיכרון (הישנות נמחקות)
+const MAX_TOOL_LOOPS = 5; // מקסימום סיבובי tool calling לפני עצירה
+const MCP_TIMEOUT_MS = 60_000; // 60 שניות — Render Free לוקח זמן להתעורר
 const MCP_CACHE_TTL_MS = 10 * 60_000; // חיבורי MCP נשמרים 10 דקות לפני reconnect
 
 // ─── Rate Limiter ─────────────────────────────────────────────────────────────
@@ -131,10 +131,10 @@ async function connectToMcp(mcpConfig) {
     const { tools } = await mcpClient.listTools();
     log(`✅ Connected to ${mcpConfig.id} (${tools?.length ?? 0} tools)`);
     return {
-      client: mcpClient,  // דרכו קוראים לכלים
-      tools: tools || [],  // רשימת הכלים הזמינים
+      client: mcpClient, // דרכו קוראים לכלים
+      tools: tools || [], // רשימת הכלים הזמינים
       id: mcpConfig.id,
-      transport,           // נשמר כדי לסגור את החיבור כשצריך
+      transport, // נשמר כדי לסגור את החיבור כשצריך
     };
   } catch (err) {
     log(`❌ Failed ${mcpConfig.id}: ${err.message}`);
@@ -197,7 +197,7 @@ function getOrCreateChat(chatId) {
 // חותך את ההיסטוריה ל-MAX_HISTORY הודעות אחרונות (+ system תמיד נשמרת)
 // מונע שהיסטוריה ארוכה מדי תכביד על קריאות ל-OpenAI (ועלות)
 function trimHistory(history) {
-  const system = history[0];   // הודעת ה-system — לא נוגעים בה לעולם
+  const system = history[0]; // הודעת ה-system — לא נוגעים בה לעולם
   const rest = history.slice(1);
   if (rest.length <= MAX_HISTORY) return history; // עוד לא צריך לחתוך
   // שומרים רק את ה-MAX_HISTORY האחרונות
@@ -210,8 +210,8 @@ function trimHistory(history) {
 // הדפדפן קורא כל שורה שמתחילה ב-"data: " ומפרש אותה כ-event
 function setupSSE(res) {
   res.setHeader("Content-Type", "text/event-stream"); // מסמן לדפדפן: זה SSE
-  res.setHeader("Cache-Control", "no-cache");          // לא לשמור ב-cache
-  res.setHeader("Connection", "keep-alive");           // שומר את החיבור פתוח
+  res.setHeader("Cache-Control", "no-cache"); // לא לשמור ב-cache
+  res.setHeader("Connection", "keep-alive"); // שומר את החיבור פתוח
   res.flushHeaders(); // שולח את ה-headers מיד (לפני כל נתון)
 
   // מחזיר פונקציה שכל קריאה אליה כותבת שורה בפורמט SSE
@@ -258,7 +258,7 @@ app.post("/api/chat", async (req, res) => {
 
     // ─── חיבור לכלי MCP ────────────────────────────────────────────────────
     const mcpConfigs = listMcps(userId); // רשימת שרתי MCP שהמשתמש הוסיף
-    const allTools = [];    // כלים בפורמט שOpenAI מבין
+    const allTools = []; // כלים בפורמט שOpenAI מבין
     const clientMap = new Map(); // שם כלי → mcpClient (לדעת לאן לשלוח קריאה)
 
     // מתחברים לכל השרתים במקביל — Promise.all מהיר יותר מ-await בלולאה
@@ -303,13 +303,13 @@ app.post("/api/chat", async (req, res) => {
       const stream = await openai.chat.completions.create({
         model: MODEL_NAME,
         messages: history,
-        tools: allTools.length > 0 ? allTools : undefined,   // כלים זמינים
+        tools: allTools.length > 0 ? allTools : undefined, // כלים זמינים
         tool_choice: allTools.length > 0 ? "auto" : undefined, // GPT מחליט מתי להשתמש
         stream: true,
         signal: abortController.signal, // ← מאפשר ביטול אם המשתמש עוזב
       });
 
-      let chunkText = "";         // טקסט שמצטבר מה-stream
+      let chunkText = ""; // טקסט שמצטבר מה-stream
       const pendingToolCalls = []; // tool calls שמגיעים בחלקים ומורכבים כאן
 
       // קריאת ה-stream: כל chunk הוא חלק קטן מהתשובה
@@ -428,7 +428,6 @@ app.post("/api/chat", async (req, res) => {
     // שולחים "done" עם רשימת הכלים שהופעלו — ה-UI ינקה badges ויציג סיכום
     send({ type: "done", usedTools: usedToolsLog });
     res.end();
-
   } catch (err) {
     // AbortError קורה כשהמשתמש סגר את הדפדפן — לא שגיאה, סיום נקי
     if (err.name === "AbortError") {

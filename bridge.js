@@ -57,7 +57,7 @@ console.log(`   פקודה: ${command} ${args.join(" ")}\n`);
 const stdioTransport = new StdioClientTransport({ command, args });
 const localClient = new Client(
   { name: "bridge-client", version: "1.0.0" },
-  { capabilities: {} }
+  { capabilities: {} },
 );
 
 try {
@@ -79,7 +79,7 @@ app.use(express.json());
 
 const mcpServer = new Server(
   { name: "bridge-server", version: "1.0.0" },
-  { capabilities: { tools: {} } }
+  { capabilities: { tools: {} } },
 );
 
 // listTools — מחזיר את הכלים של ה-STDIO

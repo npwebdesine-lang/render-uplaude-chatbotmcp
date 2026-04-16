@@ -54,20 +54,19 @@ const mobileMenuBtn = document.getElementById("mobileMenuBtn");
 const sidebar = document.getElementById("sidebar");
 const closeSidebarBtn = document.getElementById("closeSidebarBtn");
 
-
 // ─── GSAP Animations ──────────────────────────────────────────────────────────
 // GSAP (GreenSock Animation Platform) — ספריית אנימציות מתקדמת.
 // gsap.fromTo(el, from, to) — מגדיר נקודת התחלה ונקודת סיום של אנימציה
 // gsap.to(el, props) — מאניה מהמצב הנוכחי לערכים המוגדרים
 // כל האנימציות מרוכזות כאן כדי שיהיה קל לשנות/לכבות אותן
 const anim = {
-
   // ─── הודעה חדשה בצ'אט — עולה מלמטה ונכנסת ───────────────────────────────
   // opacity: 0→1 (שקיפות), y: 20→0 (מיקום אנכי בפיקסלים)
   bubbleIn(el) {
-    gsap.fromTo(el,
+    gsap.fromTo(
+      el,
       { opacity: 0, y: 20 },
-      { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }
+      { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" },
     );
   },
 
@@ -75,18 +74,25 @@ const anim = {
   // שלב 1: scale: 0.7→1 (כניסה מהירה עם "קפיצה")
   // שלב 2: onComplete — אחרי הכניסה, מתחיל לולאת פעימה (repeat: -1 = אינסוף)
   toolBadgeIn(el) {
-    gsap.fromTo(el,
+    gsap.fromTo(
+      el,
       { opacity: 0, scale: 0.7 },
       {
-        opacity: 1, scale: 1, duration: 0.25, ease: "back.out(2)",
+        opacity: 1,
+        scale: 1,
+        duration: 0.25,
+        ease: "back.out(2)",
         onComplete() {
           // yoyo: true = הולך ובא — fade out ואז fade in שוב ושוב
           gsap.to(el, {
-            opacity: 0.45, duration: 0.55,
-            repeat: -1, yoyo: true, ease: "sine.inOut"
+            opacity: 0.45,
+            duration: 0.55,
+            repeat: -1,
+            yoyo: true,
+            ease: "sine.inOut",
           });
-        }
-      }
+        },
+      },
     );
   },
 
@@ -99,22 +105,25 @@ const anim = {
 
   // ─── div "כלים שהופעלו" — מחליק פנימה מלמעלה ───────────────────────────
   toolsUsedIn(el) {
-    gsap.fromTo(el,
+    gsap.fromTo(
+      el,
       { opacity: 0, y: -8 },
-      { opacity: 1, y: 0, duration: 0.3, ease: "power2.out" }
+      { opacity: 1, y: 0, duration: 0.3, ease: "power2.out" },
     );
   },
 
   // ─── פתיחת מודל — overlay מתעמעם + כרטיס מתרחב ─────────────────────────
   modalOpen(overlayEl, cardEl) {
-    gsap.fromTo(overlayEl,
+    gsap.fromTo(
+      overlayEl,
       { opacity: 0 },
-      { opacity: 1, duration: 0.22, ease: "none" }
+      { opacity: 1, duration: 0.22, ease: "none" },
     );
     // scale: 0.9→1 + y: -22→0 = אפקט "נפילה מלמעלה"
-    gsap.fromTo(cardEl,
+    gsap.fromTo(
+      cardEl,
       { opacity: 0, scale: 0.9, y: -22 },
-      { opacity: 1, scale: 1, y: 0, duration: 0.32, ease: "back.out(1.5)" }
+      { opacity: 1, scale: 1, y: 0, duration: 0.32, ease: "back.out(1.5)" },
     );
   },
 
@@ -122,46 +131,68 @@ const anim = {
   // onComplete: רץ אחרי שהאנימציה מסתיימת — שם מסתירים את ה-overlay
   modalClose(overlayEl, cardEl, onDone) {
     gsap.to(cardEl, {
-      opacity: 0, scale: 0.9, y: -10,
-      duration: 0.18, ease: "power2.in"
+      opacity: 0,
+      scale: 0.9,
+      y: -10,
+      duration: 0.18,
+      ease: "power2.in",
     });
     gsap.to(overlayEl, {
-      opacity: 0, duration: 0.22, ease: "none",
-      onComplete: onDone // קריאה לפונקציה שתסתיר את האלמנט
+      opacity: 0,
+      duration: 0.22,
+      ease: "none",
+      onComplete: onDone, // קריאה לפונקציה שתסתיר את האלמנט
     });
   },
 
   // ─── פריט בסרגל הצ'אטים — נכנס מימין עם עיכוב לפי מיקום ────────────────
   // delay: index * 0.04 = כל פריט נכנס 40ms אחרי הקודם (stagger effect)
   listItemIn(el, index) {
-    gsap.fromTo(el,
+    gsap.fromTo(
+      el,
       { opacity: 0, x: 18 },
-      { opacity: 1, x: 0, duration: 0.22, delay: index * 0.04, ease: "power2.out" }
+      {
+        opacity: 1,
+        x: 0,
+        duration: 0.22,
+        delay: index * 0.04,
+        ease: "power2.out",
+      },
     );
   },
 
   // ─── כרטיס MCP — נכנס עם stagger וקצת scale ────────────────────────────
   mcpCardIn(el, index) {
-    gsap.fromTo(el,
+    gsap.fromTo(
+      el,
       { opacity: 0, x: 16, scale: 0.97 },
-      { opacity: 1, x: 0, scale: 1, duration: 0.26, delay: index * 0.06, ease: "power2.out" }
+      {
+        opacity: 1,
+        x: 0,
+        scale: 1,
+        duration: 0.26,
+        delay: index * 0.06,
+        ease: "power2.out",
+      },
     );
   },
 
   // ─── נקודת סטטוס MCP — קפיצה אלסטית כשהסטטוס משתנה ─────────────────────
   // elastic.out = אנימציה קפיצית (מגיע לגודל, חורג קצת, חוזר)
   mcpDotFlash(dotEl) {
-    gsap.fromTo(dotEl,
+    gsap.fromTo(
+      dotEl,
       { scale: 1.9, opacity: 0.6 },
-      { scale: 1, opacity: 1, duration: 0.45, ease: "elastic.out(1, 0.4)" }
+      { scale: 1, opacity: 1, duration: 0.45, ease: "elastic.out(1, 0.4)" },
     );
   },
 
   // ─── כפתור שליחה — דחיסה קלה ושחרור ────────────────────────────────────
   sendPop(el) {
-    gsap.fromTo(el,
+    gsap.fromTo(
+      el,
       { scale: 0.88 },
-      { scale: 1, duration: 0.35, ease: "elastic.out(1, 0.5)" }
+      { scale: 1, duration: 0.35, ease: "elastic.out(1, 0.5)" },
     );
   },
 
@@ -169,20 +200,23 @@ const anim = {
   // xPercent: 100 = מחוץ למסך לגמרי מימין
   sidebarOpen(el) {
     el.classList.add("open");
-    gsap.fromTo(el,
+    gsap.fromTo(
+      el,
       { xPercent: 100 },
-      { xPercent: 0, duration: 0.32, ease: "power3.out" }
+      { xPercent: 0, duration: 0.32, ease: "power3.out" },
     );
   },
 
   // ─── Sidebar מובייל — יוצא ימינה ────────────────────────────────────────
   sidebarClose(el) {
     gsap.to(el, {
-      xPercent: 100, duration: 0.26, ease: "power3.in",
+      xPercent: 100,
+      duration: 0.26,
+      ease: "power3.in",
       onComplete() {
         el.classList.remove("open");
         gsap.set(el, { clearProps: "transform" }); // ניקוי inline style
-      }
+      },
     });
   },
 
@@ -193,18 +227,21 @@ const anim = {
     const main = document.querySelector(".main-chat");
     if (window.innerWidth <= 768) {
       gsap.set(sidebar, { xPercent: 100 }); // מסתיר sidebar מחוץ למסך
-      gsap.fromTo(main,
+      gsap.fromTo(
+        main,
         { opacity: 0 },
-        { opacity: 1, duration: 0.45, ease: "power1.out" }
+        { opacity: 1, duration: 0.45, ease: "power1.out" },
       );
     } else {
-      gsap.fromTo(sidebar,
+      gsap.fromTo(
+        sidebar,
         { opacity: 0, x: 24 },
-        { opacity: 1, x: 0, duration: 0.45, ease: "power2.out" }
+        { opacity: 1, x: 0, duration: 0.45, ease: "power2.out" },
       );
-      gsap.fromTo(main,
+      gsap.fromTo(
+        main,
         { opacity: 0 },
-        { opacity: 1, duration: 0.5, delay: 0.12, ease: "power1.out" }
+        { opacity: 1, duration: 0.5, delay: 0.12, ease: "power1.out" },
       );
     }
   },
@@ -230,7 +267,9 @@ function makeId() {
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) {
-    try { return JSON.parse(raw); } catch {}
+    try {
+      return JSON.parse(raw);
+    } catch {}
   }
   // state ראשוני: צ'אט אחד ריק
   const first = makeId();
@@ -266,7 +305,8 @@ function escapeHtml(str) {
 // מיפוי מסיומת קובץ לסוג MIME — משמש ליצירת Blob עם הסוג הנכון
 const MIME_TYPES = {
   csv: "text/csv",
-  html: "text/html", htm: "text/html",
+  html: "text/html",
+  htm: "text/html",
   py: "text/x-python",
   js: "text/javascript",
   ts: "text/typescript",
@@ -291,7 +331,7 @@ function addDownloadButtons(contentDiv) {
     // שולפים את סוג השפה מ-class כמו "language-csv" → "csv"
     let extension = "txt"; // ברירת מחדל אם אין שפה מוגדרת
     const langClass = Array.from(codeBlock.classList).find((c) =>
-      c.startsWith("language-")
+      c.startsWith("language-"),
     );
     if (langClass) extension = langClass.replace("language-", "");
 
@@ -508,8 +548,7 @@ function renameChatIfFirstMessage(chatId, firstUserMessage) {
   const c = state.chats[chatId];
   if (c && c.messages.length === 1 && c.title.startsWith("צ'אט")) {
     c.title =
-      firstUserMessage.slice(0, 20) +
-      (firstUserMessage.length > 20 ? "…" : "");
+      firstUserMessage.slice(0, 20) + (firstUserMessage.length > 20 ? "…" : "");
   }
 }
 
@@ -530,7 +569,10 @@ deleteChatBtn.addEventListener("click", async () => {
   if (!activeId || !confirm("למחוק את הצ'אט הזה?")) return;
   try {
     // מוחק גם מהשרת (היסטוריה ב-server.js) וגם מה-localStorage
-    await fetch(`/api/chat/${activeId}`, { method: "DELETE", headers: apiHeaders });
+    await fetch(`/api/chat/${activeId}`, {
+      method: "DELETE",
+      headers: apiHeaders,
+    });
   } catch {}
 
   delete state.chats[activeId];
@@ -552,7 +594,8 @@ deleteChatBtn.addEventListener("click", async () => {
 // גובה ה-textarea גדל אוטומטית עם הקלדה (עד 150px)
 input.addEventListener("input", function () {
   this.style.height = "auto";
-  this.style.height = (this.scrollHeight < 150 ? this.scrollHeight : 150) + "px";
+  this.style.height =
+    (this.scrollHeight < 150 ? this.scrollHeight : 150) + "px";
 });
 
 // Enter שולח הודעה, Shift+Enter = ירידת שורה
@@ -628,13 +671,16 @@ form.addEventListener("submit", async (e) => {
       for (const line of lines) {
         if (!line.startsWith("data: ")) continue; // שורות ריקות ו-comments
         let data;
-        try { data = JSON.parse(line.slice(6)); } catch { continue; } // slice(6) = מסיר "data: "
+        try {
+          data = JSON.parse(line.slice(6));
+        } catch {
+          continue;
+        } // slice(6) = מסיר "data: "
 
         if (data.type === "chunk") {
           // token חדש מ-GPT — מוסיפים לטקסט ומנזמנים render
           fullText += data.text;
           scheduleRender(contentDiv, fullText, cursor); // throttled render
-
         } else if (data.type === "tool") {
           // GPT מפעיל כלי — מציגים badge מונפש
           const badge = document.createElement("div");
@@ -643,7 +689,6 @@ form.addEventListener("submit", async (e) => {
           bubbleDiv.appendChild(badge);
           anim.toolBadgeIn(badge); // ✨ badge נכנס ומתחיל לפעום
           chatEl.scrollTop = chatEl.scrollHeight;
-
         } else if (data.type === "done") {
           // השרת סיים — מנקים badges חיים, מציגים תגיות סופיות
           usedTools = data.usedTools || [];
@@ -652,7 +697,6 @@ form.addEventListener("submit", async (e) => {
             el.remove();
           });
           finalizeStreamBubble(bubbleDiv, contentDiv, fullText, usedTools);
-
         } else if (data.type === "error") {
           throw new Error(data.message);
         }
@@ -733,7 +777,8 @@ function renderMcpList(servers) {
     let statusLabel = "";
     if (status === "loading") statusLabel = "מתחבר...";
     else if (status === "ready")
-      statusLabel = toolCount !== undefined ? `${toolCount} כלים נטענו` : "מוכן";
+      statusLabel =
+        toolCount !== undefined ? `${toolCount} כלים נטענו` : "מוכן";
     else if (status === "error") statusLabel = "שגיאת חיבור";
 
     const div = document.createElement("div");
@@ -773,7 +818,10 @@ function renderMcpList(servers) {
       // ✨ כרטיס יוצא ימינה לפני מחיקה — אנימציית יציאה
       const card = btn.closest(".mcp-card");
       gsap.to(card, {
-        opacity: 0, x: 30, duration: 0.22, ease: "power2.in",
+        opacity: 0,
+        x: 30,
+        duration: 0.22,
+        ease: "power2.in",
         onComplete: async () => {
           await fetch(`/api/mcps/${encodeURIComponent(id)}`, {
             method: "DELETE",
@@ -782,7 +830,7 @@ function renderMcpList(servers) {
           mcpStatusMap.delete(id);
           mcpStatusMap.delete(`${id}_tools`);
           await refreshMcps(); // רינדור מחדש אחרי המחיקה
-        }
+        },
       });
     });
   });
@@ -823,7 +871,8 @@ function openModal() {
 
 // סוגר את ה-modal עם אנימציה, ואחריה מסתיר (hidden class)
 function closeModal() {
-  anim.modalClose(modalOverlay, modalCard, () => { // ✨ אנימציית סגירה
+  anim.modalClose(modalOverlay, modalCard, () => {
+    // ✨ אנימציית סגירה
     modalOverlay.classList.add("hidden");
     gsap.set([modalOverlay, modalCard], { clearProps: "all" }); // ניקוי inline styles
   });
@@ -839,10 +888,9 @@ async function pingAndFinalize(addedId) {
   mcpStatusMap.set(addedId, "loading");
   renderMcpList(lastMcpServers);
 
-  const pingRes = await fetch(
-    `/api/mcps/${encodeURIComponent(addedId)}/ping`,
-    { headers: apiHeaders }
-  );
+  const pingRes = await fetch(`/api/mcps/${encodeURIComponent(addedId)}/ping`, {
+    headers: apiHeaders,
+  });
   const pingData = await pingRes.json();
 
   if (pingData.status === "ready") {
@@ -853,7 +901,8 @@ async function pingAndFinalize(addedId) {
   } else {
     mcpStatusMap.set(addedId, "error");
     // הסבר ידידותי: Render Free יכול לקחת זמן להתעורר
-    httpStatus.textContent = "⚠️ השרת נוסף אך לא הגיב — ייתכן שהוא עדיין מתחיל (Render Free)";
+    httpStatus.textContent =
+      "⚠️ השרת נוסף אך לא הגיב — ייתכן שהוא עדיין מתחיל (Render Free)";
     httpStatus.className = "status warning";
   }
 
@@ -873,7 +922,11 @@ addHttpBtn.addEventListener("click", async () => {
     httpStatus.textContent = "❌ יש למלא את כל השדות";
     httpStatus.className = "status error";
     // ✨ "shake" effect על ה-modal כשיש שגיאה — אנימציית רעידה
-    gsap.fromTo(modalCard, { x: -6 }, { x: 0, duration: 0.4, ease: "elastic.out(3, 0.3)" });
+    gsap.fromTo(
+      modalCard,
+      { x: -6 },
+      { x: 0, duration: 0.4, ease: "elastic.out(3, 0.3)" },
+    );
     return;
   }
   try {
@@ -885,20 +938,25 @@ addHttpBtn.addEventListener("click", async () => {
       headers: apiHeaders,
       body: JSON.stringify({ id, label, url }),
     });
-    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "שגיאה");
+    if (!r.ok)
+      throw new Error((await r.json().catch(() => ({}))).error || "שגיאה");
     const { added } = await r.json();
     httpStatus.textContent = "✅ נוסף! בודק חיבור לשרת...";
     await pingAndFinalize(added.id); // ping ל"חימום" השרת ובדיקת כלים
   } catch (e) {
     httpStatus.textContent = "❌ שגיאה: " + e.message;
     httpStatus.className = "status error";
-    gsap.fromTo(modalCard, { x: -6 }, { x: 0, duration: 0.4, ease: "elastic.out(3, 0.3)" });
+    gsap.fromTo(
+      modalCard,
+      { x: -6 },
+      { x: 0, duration: 0.4, ease: "elastic.out(3, 0.3)" },
+    );
     addHttpBtn.disabled = false;
   }
 });
 
 // ─── Mobile Sidebar ───────────────────────────────────────────────────────────
-mobileMenuBtn.addEventListener("click", () => anim.sidebarOpen(sidebar));   // ✨
+mobileMenuBtn.addEventListener("click", () => anim.sidebarOpen(sidebar)); // ✨
 closeSidebarBtn.addEventListener("click", () => anim.sidebarClose(sidebar)); // ✨
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
