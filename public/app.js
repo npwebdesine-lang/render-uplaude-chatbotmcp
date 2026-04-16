@@ -200,6 +200,7 @@ const anim = {
   // xPercent: 100 = מחוץ למסך לגמרי מימין
   sidebarOpen(el) {
     el.classList.add("open");
+    sidebarBackdrop.classList.add("visible");
     gsap.fromTo(
       el,
       { xPercent: 100 },
@@ -209,6 +210,7 @@ const anim = {
 
   // ─── Sidebar מובייל — יוצא ימינה ────────────────────────────────────────
   sidebarClose(el) {
+    sidebarBackdrop.classList.remove("visible");
     gsap.to(el, {
       xPercent: 100,
       duration: 0.26,
