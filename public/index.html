@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       name="viewport"
-      content="width=device-width,initial-scale=1,user-scalable=yes"
+      content="width=device-width,initial-scale=1,user-scalable=yes,viewport-fit=cover"
     />
     <title>AI Workspace</title>
     <link rel="stylesheet" href="style.css" />
@@ -13,7 +13,7 @@
   </head>
   <body>
     <button id="mobileMenuBtn" class="mobile-menu-btn">☰</button>
-    <div id="sidebarBackdrop" class="sidebar-backdrop hidden"></div>
+    <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
 
     <div class="app-container">
       <aside id="sidebar" class="sidebar">
@@ -78,7 +78,6 @@
           <button id="closeModalBtn" class="icon-btn">✕</button>
         </div>
 
-        <!-- שדות -->
         <div class="field">
           <label>מזהה כלי (אנגלית, ללא רווחים)</label>
           <input id="httpId" placeholder="e.g. filesystem" />
@@ -88,7 +87,6 @@
           <input id="httpLabel" placeholder="My Filesystem" />
         </div>
 
-        <!-- HTTP fields -->
         <div id="httpFields">
           <div class="field">
             <label>כתובת השרת (URL)</label>

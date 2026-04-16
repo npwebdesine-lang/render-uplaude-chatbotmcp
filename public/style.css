@@ -28,10 +28,17 @@
     sans-serif;
 }
 
+/* פתרון לחיתוך מסך במובייל (dvh) */
+html {
+  height: -webkit-fill-available;
+}
+
 body {
   background: var(--bg-main);
   color: var(--text-main);
   height: 100vh;
+  height: 100dvh;
+  min-height: -webkit-fill-available;
   display: flex;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
@@ -41,6 +48,11 @@ body {
   display: flex;
   width: 100%;
   height: 100%;
+}
+
+/* מחלקת הסתרה קריטית ל-JS */
+.hidden {
+  display: none !important;
 }
 
 /* ─── Sidebar ───────────────────────────────────────────────────────────── */
@@ -109,7 +121,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-left: 4px; /* מקום לפס הגלילה */
+  padding-left: 4px;
 }
 
 .scrollable-list::-webkit-scrollbar {
@@ -334,6 +346,19 @@ body {
   color: white;
 }
 
+.ghost-btn {
+  background: transparent;
+  color: white;
+  border: none;
+  padding: 12px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.ghost-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
 .icon-btn {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--border);
@@ -383,6 +408,19 @@ body {
   margin-bottom: 24px;
 }
 
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.field label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
 .field input {
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid var(--border);
@@ -398,7 +436,45 @@ body {
   border-color: var(--accent);
 }
 
-/* ─── Mobile Adjustments ────────────────────────────────────────────────── */
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.status {
+  font-size: 13px;
+  margin-top: 15px;
+  min-height: 20px;
+  text-align: center;
+  font-weight: 500;
+}
+
+.status.error {
+  color: var(--danger);
+}
+.status.success {
+  color: var(--accent);
+}
+.status.warning {
+  color: #facc15;
+}
+
+/* ─── Sidebar Backdrop & Mobile Menu ────────────────────────────────────── */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  z-index: 55;
+  display: none;
+}
+
+.sidebar-backdrop.visible {
+  display: block;
+}
+
 .mobile-menu-btn {
   display: none;
   position: absolute;
@@ -425,16 +501,6 @@ body {
   cursor: pointer;
 }
 
-.sidebar-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
-  z-index: 55;
-  display: none;
-}
-
 @media (max-width: 768px) {
   .mobile-menu-btn {
     display: flex;
@@ -446,7 +512,7 @@ body {
   }
 
   .chat-header {
-    padding-right: 75px; /* מקום לכפתור התפריט */
+    padding-right: 75px;
   }
 
   .sidebar {
@@ -458,24 +524,28 @@ body {
     max-width: 300px;
     box-shadow: -10px 0 25px rgba(0, 0, 0, 0.5);
     transform: translateX(100%);
-    z-index: 65; /* מעל ה-backdrop */
+    z-index: 65;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
   }
 
   .bubble {
     max-width: 90%;
   }
-}
 
-@media (max-width: 480px) {
   .input-area {
     padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
   }
 
   .chat-form {
-    padding: 6px 6px 6px 12px;
-    border-radius: 20px;
+    padding: 6px;
   }
+}
 
+@media (max-width: 480px) {
   .chat-form button {
     padding: 0 16px;
     border-radius: 14px;
@@ -493,75 +563,188 @@ body {
   }
 }
 
-/* ─── Markdown & Code Blocks ────────────────────────────────────────────── */
+/* ─── Markdown, Code Blocks & MCP ───────────────────────────────────────── */
+.markdown-content p {
+  margin-bottom: 15px;
+}
+.markdown-content a {
+  color: #90cdf4;
+  text-decoration: none;
+  font-weight: bold;
+}
+.markdown-content a:hover {
+  text-decoration: underline;
+}
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 15px;
+  font-size: 14px;
+}
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid var(--border);
+  padding: 10px;
+  text-align: right;
+}
+.markdown-content th {
+  background: rgba(255, 255, 255, 0.05);
+  font-weight: bold;
+  color: var(--accent);
+}
 .markdown-content pre {
   background: #12141a;
   padding: 16px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.05);
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+  overflow-x: auto;
+  margin-bottom: 15px;
+  direction: ltr;
+  text-align: left;
+}
+.markdown-content code {
+  font-family: monospace;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+.markdown-content pre code {
+  background: transparent;
+  padding: 0;
+}
+.markdown-content img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 10px 0;
 }
 
 .tools-used {
   margin-top: 12px;
+  display: flex;
   gap: 6px;
+  flex-wrap: wrap;
 }
-
 .tool-badge {
   background: rgba(16, 185, 129, 0.1);
   color: var(--accent);
   border: 1px solid rgba(16, 185, 129, 0.2);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-family: monospace;
+}
+.tool-badge-live {
+  color: #facc15;
+  background: #2d3748;
+  border-color: transparent;
+}
+
+.blink {
+  animation: blinker 1.5s linear infinite;
+}
+@keyframes blinker {
+  50% {
+    opacity: 0.5;
+  }
+}
+.typing-cursor::after {
+  content: "▌";
+  color: var(--accent);
+  animation: blinker 0.8s step-start infinite;
+}
+
+.download-btn-wrap {
+  margin-top: 10px;
+  text-align: left;
+}
+.download-btn {
+  font-size: 12px;
+  padding: 5px 12px;
 }
 
 .mcp-card {
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.03);
-}
-/* ─── תיקוני מבנה ומצבים (מודל) ────────────────────────────────────────── */
-
-/* מחלקת ההסתרה הקריטית ל-JS */
-.hidden {
-  display: none !important;
-}
-
-/* סידור השדות אחד מתחת לשני */
-.field {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 16px;
+  justify-content: space-between;
+  align-items: center;
+}
+.mcp-dot {
+  font-size: 11px;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+.mcp-dot.mcp-ready {
+  color: #4ade80;
+}
+.mcp-dot.mcp-error {
+  color: #f87171;
+}
+.mcp-dot.mcp-unknown {
+  color: #6b7280;
+}
+.mcp-dot.mcp-loading {
+  color: #facc15;
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.field label {
-  font-size: 13px;
-  font-weight: 500;
+.mcp-status-text {
+  font-size: 11px;
   color: var(--text-muted);
 }
-
-/* אזור הכפתורים בתחתית המודל */
-.actions {
-  display: flex;
-  gap: 12px;
-  margin-top: 24px;
+.mcp-status-text.ready {
+  color: #4ade80;
 }
-
-/* אזור הודעות הסטטוס (שגיאה/הצלחה) */
-.status {
-  font-size: 13px;
-  margin-top: 15px;
-  min-height: 20px;
-  text-align: center;
-  font-weight: 500;
+.mcp-status-text.error {
+  color: #f87171;
 }
-
-.status.error {
-  color: var(--danger);
-}
-
-.status.success {
-  color: var(--accent);
-}
-
-.status.warning {
+.mcp-status-text.loading {
   color: #facc15;
+}
+
+.mcp-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.mcp-label {
+  font-weight: bold;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mcp-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.mcp-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.mcp-type-badge {
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-weight: bold;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+.mcp-type-badge.http {
+  background: #1e3a5f;
+  color: #90cdf4;
 }
