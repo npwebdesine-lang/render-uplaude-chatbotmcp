@@ -29,15 +29,19 @@ const __dirname = path.dirname(__filename);
 // כל קובץ ב-public/ מוגש ישירות לדפדפן (index.html, app.js, style.css)
 app.use(express.static(path.join(__dirname, "public")));
 
-// לקוח OpenAI — קורא את ה-API key מ-environment variable (לא קוד רגיל!)
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// לקוח OpenAI (מחובר בפועל ל-NVIDIA NIM API, שתומך ב-SDK של OpenAI) —
+// קורא את ה-API key מ-environment variable (לא קוד רגיל!)
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: "https://integrate.api.nvidia.com/v1",
+});
 
 // Map ששומר את היסטוריית השיחה של כל chatId
 // מבנה: chatId (string) → messages[] (מערך הודעות בפורמט OpenAI)
 const chats = new Map();
 
 // ─── קבועי תצורה ─────────────────────────────────────────────────────────────
-const MODEL_NAME = "z-ai/glm-5.2"; // המודל של OpenAI שנשתמש בו
+const MODEL_NAME = "z-ai/glm-5.2"; // המודל שנשתמש בו דרך NVIDIA NIM API
 const MAX_HISTORY = 30; // כמה הודעות לשמור בזיכרון (הישנות נמחקות)
 const MAX_TOOL_LOOPS = 5; // מקסימום סיבובי tool calling לפני עצירה
 const MCP_TIMEOUT_MS = 60_000; // 60 שניות — Render Free לוקח זמן להתעורר
