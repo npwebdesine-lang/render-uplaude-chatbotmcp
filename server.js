@@ -37,7 +37,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const chats = new Map();
 
 // ─── קבועי תצורה ─────────────────────────────────────────────────────────────
-const MODEL_NAME = "gpt-4o"; // המודל של OpenAI שנשתמש בו
+const MODEL_NAME = "z-ai/glm-5.2"; // המודל של OpenAI שנשתמש בו
 const MAX_HISTORY = 30; // כמה הודעות לשמור בזיכרון (הישנות נמחקות)
 const MAX_TOOL_LOOPS = 5; // מקסימום סיבובי tool calling לפני עצירה
 const MCP_TIMEOUT_MS = 60_000; // 60 שניות — Render Free לוקח זמן להתעורר
